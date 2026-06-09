@@ -48,6 +48,7 @@ import { watchtowerModule } from "./watchtower.js";
 import { notifyModule } from "./notify.js";
 import { metaModule } from "./meta.js";
 import { healthModule } from "./health.js";
+import { setupModule } from "./setup.js";
 
 /** Required clients — server won't start without these. */
 export interface RequiredClients {
@@ -80,6 +81,7 @@ export type HomelabClients = RequiredClients & OptionalClients;
 export function buildModules(c: HomelabClients): ToolModule[] {
   const modules: ToolModule[] = [
     // ── Always-on ─────────────────────────────────────────────────────────────
+    setupModule(),
     proxmoxModule(c.proxmox, c.pveSSH),
     devboxModule(c.devbox),
     networkModule(c.devbox),

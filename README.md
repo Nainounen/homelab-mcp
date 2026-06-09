@@ -13,6 +13,14 @@ MCP server that gives Claude Code full control of a Proxmox homelab — manage V
 
 **65+ tools across 17 domains.** Modular architecture designed for AI-assisted extensibility.
 
+## AI Setup
+
+**No manual config needed.** The server includes an AI-native setup wizard. Just connect it to Claude Code and say:
+
+> "Set up my homelab" or "Configure the MCP server"
+
+Claude will read your current `.env`, ask you for each setting interactively, save your answers, and verify connectivity — all through conversation. No need to dig through docs or edit config files manually.
+
 ## Quick start
 
 ### Prerequisites
@@ -258,6 +266,7 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `notify_telegram` | Send a message to Telegram |
 | `homelab_health` | Ping all configured services, report reachable/down + latency |
 | `homelab_capabilities` | **Start here** — lists all available tools |
+| `homelab_setup` | **AI-guided setup wizard** — configure `.env` through conversation |
 
 ## Architecture
 
