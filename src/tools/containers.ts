@@ -8,7 +8,7 @@ import { DevboxSSH, ProxmoxSSH } from "../ssh.js";
 function mediaContainers(): string[] {
   const env = process.env.MEDIA_CONTAINERS;
   if (env) return env.split(",").map((s) => s.trim()).filter(Boolean);
-  return ["plex", "radarr", "sonarr", "sabnzbd", "seerr", "prowlarr"];
+  return ["plex", "radarr", "sonarr", "sabnzbd", "overseerr", "prowlarr"];
 }
 
 export const ContainerLogsSchema = z.object({

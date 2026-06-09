@@ -63,7 +63,11 @@ export const GitSchema = z.object({
   repo_url: z
     .string()
     .optional()
-    .describe("Remote repository URL (required for clone action)"),
+    .describe("Remote repository URL (required for clone action)")
+    .refine(
+      (u) => !u || /^https?:\/\/.+/.test(u) || /^git@.+:.+/.test(u),
+      { message: "Must be a valid HTTP(S) or SSH git URL" }
+    ),
   branch: z
     .string()
     .optional()

@@ -22,7 +22,8 @@ import { createBazarrClient } from "./bazarr.js";
 import { createAdGuardClient } from "./adguard.js";
 import { createPbsClient } from "./pbs.js";
 import { buildModules, validateModules, HomelabClients } from "./modules/registry.js";
-import { sanitizeError } from "./utils.js";
+import { sanitizeError, redactSecrets } from "./utils.js";
+import { version } from "../package.json";
 
 // ─── Helper: try to create an optional client, skip with a warning if env vars missing ──
 
@@ -85,7 +86,7 @@ for (const mod of MODULES) {
 // ─── Server ───────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "homelab-mcp", version: "2.1.0" },
+  { name: "homelab-mcp", version },
   { capabilities: { tools: {} } }
 );
 
@@ -106,7 +107,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       };
     }
     const result = await handler(args);
-    if (result !== null) return { content: [{ type: "text", text: result }] };
+    if (result !== null) return { content: [{ type: "text", text: redactSecrets(result) }] };
     return {
       content: [{ type: "text", text: `Unknown tool: ${name}` }],
       isError: true,

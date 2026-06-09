@@ -9,6 +9,8 @@ describe("devbox safety filter (BLOCKED_PATTERNS)", () => {
   it("blocks rm -rf /", () => {
     expect(isBlocked("rm -rf /", BLOCKED_PATTERNS)).toBe(true);
     expect(isBlocked("rm -rf / --no-preserve-root", BLOCKED_PATTERNS)).toBe(true);
+    expect(isBlocked("rm -rf --no-preserve-root /", BLOCKED_PATTERNS)).toBe(true);
+    expect(isBlocked("rm -rf --no-preserve-root --one-file-system /", BLOCKED_PATTERNS)).toBe(true);
   });
 
   it("blocks mkfs", () => {

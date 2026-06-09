@@ -33,9 +33,25 @@ export interface ExecResult {
   exitCode: number;
 }
 
+/**
+ * Parse a command timeout from an env var with validation.
+ * Falls back to `defaultMs` if unset, non-numeric, or negative.
+ */
+function parseTimeout(envKey: string, defaultMs: number): number {
+  const raw = process.env[envKey];
+  if (!raw) return defaultMs;
+  const n = parseInt(raw, 10);
+  if (isNaN(n) || n <= 0) {
+    process.stderr.write(`[homelab-mcp] WARNING: ${envKey}=${raw} is invalid — using default ${defaultMs}ms\n`);
+    return defaultMs;
+  }
+  return n;
+}
+
 /** Commands that are too dangerous to forward to the devbox. */
 export const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\//,
+  // rm -rf / with optional flags between -rf and / (e.g. --no-preserve-root)
+  /rm\s+-rf\s+(\S+\s+)*\//,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
   /\bshutdown\b/,
@@ -43,7 +59,7 @@ export const BLOCKED_PATTERNS = [
   /\bpoweroff\b/,
   /\bhalt\b/,
   /\binit\s+0\b/,
-  /systemctl\s+(reboot|poweroff|halt|shutdown)/,
+  /\bsystemctl\s+(reboot|poweroff|halt|shutdown)\b/,
   /\bsystemctl\s+stop\s+(ssh|sshd|ssh\.service|ssh\.socket)\b/,
 ];
 
@@ -54,6 +70,7 @@ export const BLOCKED_PATTERNS = [
 export class DevboxSSH {
   private ssh: NodeSSH = new NodeSSH();
   private connected = false;
+  private cmdTimeout: number;
   private config: {
     host: string;
     port: number;
@@ -69,6 +86,9 @@ export class DevboxSSH {
     for (const key of required) {
       if (!process.env[key]) throw new Error(`Missing env var: ${key}`);
     }
+
+    // Configurable command timeout (default 30s)
+    this.cmdTimeout = parseTimeout("DEVBOX_CMD_TIMEOUT", 30_000);
     this.config = {
       host: process.env.DEVBOX_HOST!,
       port: parseInt(process.env.DEVBOX_PORT!, 10),
@@ -102,6 +122,8 @@ export class DevboxSSH {
   async exec(command: string, cwd = "/root"): Promise<ExecResult> {
     for (const pattern of BLOCKED_PATTERNS) {
       if (pattern.test(command)) {
+        const ts = new Date().toISOString();
+        process.stderr.write(`[homelab-mcp] ${ts} BLOCKED devbox command: "${command}" (matched ${pattern})\n`);
         return {
           stdout: "",
           stderr: `Command blocked by safety filter: matches pattern ${pattern}`,
@@ -110,12 +132,16 @@ export class DevboxSSH {
       }
     }
 
+    if (process.env.DEBUG_COMMANDS === "true") {
+      process.stderr.write(`[homelab-mcp] devbox exec: "${command}" (cwd: ${cwd})\n`);
+    }
+
     await this.ensureConnected();
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error("Command timed out after 30s"));
-      }, 30_000);
+        reject(new Error(`Command timed out after ${Math.round(this.cmdTimeout / 1000)}s`));
+      }, this.cmdTimeout);
 
       this.ssh
         .execCommand(command, { cwd })
@@ -144,7 +170,7 @@ export class DevboxSSH {
     }
     // Encode on the client side, decode remotely — avoids heredoc quoting issues
     const b64 = Buffer.from(content, "utf8").toString("base64");
-    const result = await this.exec(`echo '${b64}' | base64 -d > "${path}"`);
+    const result = await this.exec(`printf '%s' "${b64}" | base64 -d > "${path}"`);
     if (result.exitCode !== 0) {
       throw new Error(`writeFile failed: ${result.stderr}`);
     }
@@ -164,7 +190,7 @@ export function getDevbox(): DevboxSSH {
 // ─── Proxmox SSH ──────────────────────────────────────────────────────────────
 
 export const PVE_BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\/(?:\s|$)/,
+  /rm\s+-rf\s+(\S+\s+)*\//,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
   /\bpoweroff\b/,
@@ -172,12 +198,13 @@ export const PVE_BLOCKED_PATTERNS = [
   /\bshutdown\b/,
   /\breboot\b/,
   /\binit\s+0\b/,
-  /systemctl\s+(reboot|poweroff|halt|shutdown)/,
+  /\bsystemctl\s+(reboot|poweroff|halt|shutdown)\b/,
 ];
 
 export class ProxmoxSSH {
   private ssh: NodeSSH = new NodeSSH();
   private connected = false;
+  private cmdTimeout: number;
   private config: {
     host: string;
     port: number;
@@ -190,6 +217,9 @@ export class ProxmoxSSH {
 
   constructor() {
     if (!process.env.PROXMOX_HOST) throw new Error("Missing env var: PROXMOX_HOST");
+
+    // Configurable command timeout (default 60s)
+    this.cmdTimeout = parseTimeout("PROXMOX_CMD_TIMEOUT", 60_000);
     const sshUser = (process.env.PROXMOX_USER ?? "root").split("@")[0];
     this.config = {
       host: process.env.PROXMOX_HOST!,
@@ -221,6 +251,8 @@ export class ProxmoxSSH {
   async exec(command: string, cwd = "/"): Promise<ExecResult> {
     for (const pattern of PVE_BLOCKED_PATTERNS) {
       if (pattern.test(command)) {
+        const ts = new Date().toISOString();
+        process.stderr.write(`[homelab-mcp] ${ts} BLOCKED proxmox command: "${command}" (matched ${pattern})\n`);
         return {
           stdout: "",
           stderr: `Command blocked by safety filter: matches pattern ${pattern}`,
@@ -229,12 +261,16 @@ export class ProxmoxSSH {
       }
     }
 
+    if (process.env.DEBUG_COMMANDS === "true") {
+      process.stderr.write(`[homelab-mcp] proxmox exec: "${command}" (cwd: ${cwd})\n`);
+    }
+
     await this.ensureConnected();
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error("Command timed out after 60s"));
-      }, 60_000);
+        reject(new Error(`Command timed out after ${Math.round(this.cmdTimeout / 1000)}s`));
+      }, this.cmdTimeout);
 
       this.ssh
         .execCommand(command, { cwd })

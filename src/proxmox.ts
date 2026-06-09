@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import http from "http";
 import https from "https";
+import { withRetry } from "./utils.js";
 
 const keepAliveAgent = new http.Agent({ keepAlive: true });
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
@@ -79,7 +80,7 @@ export class ProxmoxClient {
   /** GET helper */
   async get<T = unknown>(path: string): Promise<T> {
     const headers = await this.getHeaders();
-    const res = await this.http.get<{ data: T }>(path, { headers });
+    const res = await withRetry(() => this.http.get<{ data: T }>(path, { headers }));
     return res.data.data;
   }
 
@@ -89,9 +90,9 @@ export class ProxmoxClient {
     body?: Record<string, unknown>
   ): Promise<T> {
     const headers = await this.getHeaders(true);
-    const res = await this.http.post<{ data: T }>(path, body ?? null, {
+    const res = await withRetry(() => this.http.post<{ data: T }>(path, body ?? null, {
       headers,
-    });
+    }));
     return res.data.data;
   }
 

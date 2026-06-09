@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from "axios";
 import http from "http";
+import { withRetry } from "./utils.js";
 
 const keepAliveAgent = new http.Agent({ keepAlive: true });
 
@@ -16,26 +17,26 @@ export class ArrClient {
   }
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
-    const r = await this.http.get<T>(path, { params });
+    const r = await withRetry(() => this.http.get<T>(path, { params }));
     return r.data;
   }
 
   async post<T>(path: string, data?: unknown): Promise<T> {
-    const r = await this.http.post<T>(path, data);
+    const r = await withRetry(() => this.http.post<T>(path, data));
     return r.data;
   }
 
   async put<T>(path: string, data?: unknown): Promise<T> {
-    const r = await this.http.put<T>(path, data);
+    const r = await withRetry(() => this.http.put<T>(path, data));
     return r.data;
   }
 
   async delete(path: string, params?: Record<string, unknown>): Promise<void> {
-    await this.http.delete(path, { params });
+    await withRetry(() => this.http.delete(path, { params }));
   }
 
   async deleteWithBody(path: string, body: unknown, params?: Record<string, unknown>): Promise<void> {
-    await this.http.delete(path, { data: body, params });
+    await withRetry(() => this.http.delete(path, { data: body, params }));
   }
 }
 

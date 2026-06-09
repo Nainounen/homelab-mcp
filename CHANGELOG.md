@@ -2,6 +2,27 @@
 
 All notable changes to the homelab-mcp server.
 
+## [2.3.0] — 2026-06-09
+
+### Security
+- **Safety filter**: `rm -rf --no-preserve-root /` and similar flag variants now caught (was: only `rm -rf /` without flags between `-rf` and `/`)
+- **Audit logging**: blocked commands logged to stderr with ISO timestamp; set `DEBUG_COMMANDS=true` to log executed commands
+- **Defense-in-depth credential scanning**: all tool output scanned against known secret values from `.env` before returning to the AI — catches accidental credential leaks in upstream API responses
+- `SECRET_KEY_PATTERNS` centralized in `utils.ts` as single source of truth (imported by `setup.ts`)
+- Git clone URL validated against HTTP(S)/SSH patterns
+
+### Added
+- **Configurable SSH timeouts**: `DEVBOX_CMD_TIMEOUT` (default 30s) and `PROXMOX_CMD_TIMEOUT` (default 60s) env vars
+- **HTTP retry logic**: `withRetry()` with exponential backoff (500ms → 1s → 2s) on network errors and 5xx; set `HTTP_RETRIES=0` to disable; applied to `ArrClient` (Radarr, Sonarr, Lidarr, Readarr) and `ProxmoxClient`
+- **TTL cache eviction**: stale entries cleaned up every 100 writes or when cache exceeds 1000 entries
+- **Setup wizard tests**: 12 test cases covering `.env` read/write, status reporting, secret masking, and error handling
+- **Docker multi-tag publish**: `latest`, major (`2`), minor (`2.3`), and patch (`2.3.0`) tags pushed to `ghcr.io`
+
+### Fixed
+- **Version**: server info now reads from `package.json` at runtime (was: hardcoded `"2.1.0"`)
+- **writeFile**: `echo '...'` replaced with `printf '%s' "..."` to handle base64 strings containing single quotes
+- **MEDIA_CONTAINERS**: default fallback `seerr` → `overseerr` to match real-world Docker Compose service naming
+
 ## [2.2.0] — 2026-06-09
 
 ### Security
