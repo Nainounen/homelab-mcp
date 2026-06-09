@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you discover a security issue in homelab-mcp, please use GitHub's [private vulnerability reporting](https://github.com/Nainounen/homelab-mcp/security/advisories/new) or email **security@ninomeier.dev**. Do not open a public issue.
+If you discover a security issue in homelab-mcp, please use GitHub's [private vulnerability reporting](https://github.com/Nainounen/homelab-mcp/security/advisories/new) or email **security@nainounen.com**. Do not open a public issue.
 
 ## Security model
 
@@ -32,5 +32,7 @@ This MCP server is designed to run locally on your machine, connected to Claude 
 
 | Version | Supported |
 |---------|-----------|
+| 2.2.x   | ✓ |
+| 2.1.x   | ✓ |
 | 2.0.x   | ✓ |
 | < 2.0   | ✗ |
