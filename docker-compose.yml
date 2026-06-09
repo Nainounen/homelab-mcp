@@ -1,0 +1,25 @@
+# Example docker-compose for running the homelab-mcp server.
+#
+# Build and start:
+#   npm run build
+#   docker compose up -d
+#
+# The server reads .env from the mounted file — copy .env.example to .env
+# and fill in your homelab credentials first.
+
+services:
+  homelab-mcp:
+    build: .
+    container_name: homelab-mcp
+    restart: unless-stopped
+    # The MCP server communicates over stdio — run it as a persistent
+    # container that Claude Code can connect to via HTTP/SSE if needed,
+    # or use it as a build artifact for direct stdio invocation.
+    #
+    # For direct stdio usage with Claude Code, you don't need Docker —
+    # just point the MCP config at the dist/index.js on your machine.
+    stdin_open: true
+    volumes:
+      - ./.env:/app/.env:ro
+      # If using SSH key auth, mount your key:
+      # - ~/.ssh/id_rsa:/home/node/.ssh/id_rsa:ro

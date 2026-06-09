@@ -1,0 +1,12 @@
+node_modules/
+src/
+scripts/
+.git/
+.env
+.mcp.json
+*.md
+.gitignore
+.dockerignore
+vitest.config.ts
+tsconfig.json
+.github/
