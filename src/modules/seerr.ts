@@ -2,7 +2,7 @@ import { ToolModule } from "../types.js";
 import { OverseerrClient } from "../overseerr.js";
 import * as impl from "../tools/overseerr.js";
 
-export function serrModule(client: OverseerrClient): ToolModule {
+export function seerrModule(client: OverseerrClient): ToolModule {
   return {
     domain: "Seerr",
     tools: [

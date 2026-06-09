@@ -32,7 +32,7 @@ import { plexModule } from "./plex.js";
 import { mediaModule } from "./media.js";
 import { prowlarrModule } from "./prowlarr.js";
 import { sabnzbdModule } from "./sabnzbd.js";
-import { serrModule } from "./seerr.js";
+import { seerrModule } from "./seerr.js";
 import { qnapModule } from "./qnap.js";
 import { prometheusModule } from "./prometheus.js";
 import { grafanaModule } from "./grafana.js";
@@ -59,8 +59,6 @@ export interface RequiredClients {
   prowlarr:   ProwlarrClient;
   sabnzbd:    SabnzbdClient;
   overseerr:  OverseerrClient;
-  prometheus: PrometheusClient;
-  grafana:    GrafanaClient;
   getQnap:    () => QnapSSH;
 }
 
@@ -73,6 +71,8 @@ export interface OptionalClients {
   pbs?:      PbsClient;
   lidarr?:   ArrClient;
   readarr?:  ArrClient;
+  prometheus?: PrometheusClient;
+  grafana?:    GrafanaClient;
 }
 
 export type HomelabClients = RequiredClients & OptionalClients;
@@ -90,10 +90,8 @@ export function buildModules(c: HomelabClients): ToolModule[] {
     mediaModule(c.devbox, c.pveSSH, c.proxmox, c.radarr, c.sonarr, c.sabnzbd),
     prowlarrModule(c.prowlarr),
     sabnzbdModule(c.sabnzbd),
-    serrModule(c.overseerr),
+    seerrModule(c.overseerr),
     qnapModule(c.getQnap),
-    prometheusModule(c.prometheus),
-    grafanaModule(c.grafana),
     notifyModule(),
   ];
 
@@ -105,6 +103,8 @@ export function buildModules(c: HomelabClients): ToolModule[] {
   if (c.pbs)      modules.push(pbsModule(c.pbs));
   if (c.lidarr)   modules.push(lidarrModule(c.lidarr));
   if (c.readarr)  modules.push(readarrModule(c.readarr));
+  if (c.prometheus) modules.push(prometheusModule(c.prometheus));
+  if (c.grafana)    modules.push(grafanaModule(c.grafana));
   // ── Add new modules above this line ─────────────────────────────────────────
 
   // Health check runs last so it can report on all other services

@@ -2,6 +2,25 @@
 
 All notable changes to the homelab-mcp server.
 
+## [2.0.1] — 2026-06-09
+
+### Added
+- Community health files: issue/PR templates, CODE_OF_CONDUCT.md
+- Status badges (CI, npm, license, node) in README
+- `.nvmrc` for automatic Node.js version switching
+- `.npmrc` with `engine-strict=true` to enforce Node.js >=20
+- `.claude/` directory added to `.gitignore`
+- Author field in `package.json`
+- Expanded npm keywords for better discoverability
+
+### Changed
+- Prometheus and Grafana are now optional — server starts without them
+- Populated `.mcp.example.json` with a working config example
+
+### Fixed
+- Typo: `serrModule` → `seerrModule` in Seerr module export
+- Missing security contact in SECURITY.md
+
 ## [2.0.0] — 2026-06-03
 
 ### Added

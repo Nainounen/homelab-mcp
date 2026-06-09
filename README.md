@@ -1,5 +1,14 @@
 # homelab-mcp
 
+[![CI](https://github.com/ninomeier/homelab-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ninomeier/homelab-mcp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/homelab-mcp.svg)](https://www.npmjs.com/package/homelab-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-green.svg)](https://nodejs.org/)
+
+<br>
+
+<img src="assets/banner.png" alt="homelab-mcp banner" width="800">
+
 MCP server that gives Claude Code full control of a Proxmox homelab — manage VMs and containers, deploy Docker projects, monitor services, control the media stack, and check storage health, all from conversation.
 
 **65+ tools across 17 domains.** Modular architecture designed for AI-assisted extensibility.
@@ -71,13 +80,12 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `PROWLARR_URL`, `PROWLARR_API_KEY` | Prowlarr API |
 | `SABNZBD_URL`, `SABNZBD_API_KEY` | SABnzbd API |
 | `OVERSEERR_URL`, `OVERSEERR_API_KEY` | Overseerr API |
-| `PROMETHEUS_URL` | Prometheus API |
-| `GRAFANA_URL`, `GRAFANA_TOKEN` | Grafana API |
 
 ### Optional (skipped with a warning if missing)
 
 | Variable | Service |
 |---|---|
+| `QNAP_HOST`, `QNAP_USER`, `QNAP_PASSWORD` or `QNAP_KEY_PATH` | QNAP NAS |
 | `PLEX_URL`, `PLEX_TOKEN` | Plex |
 | `TAUTULLI_URL`, `TAUTULLI_API_KEY` | Tautulli analytics |
 | `BAZARR_URL`, `BAZARR_API_KEY` | Bazarr subtitles |
@@ -86,7 +94,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `LIDARR_URL`, `LIDARR_API_KEY` | Lidarr music |
 | `READARR_URL`, `READARR_API_KEY` | Readarr books |
 | `UPTIME_KUMA_URL`, `UPTIME_KUMA_USER`, `UPTIME_KUMA_PASSWORD` | Uptime Kuma |
-| `QNAP_HOST`, `QNAP_USER`, `QNAP_PASSWORD` or `QNAP_KEY_PATH` | QNAP NAS |
+| `PROMETHEUS_URL` | Prometheus API |
+| `GRAFANA_URL`, `GRAFANA_TOKEN` | Grafana API |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram notifications |
 
 ### Security settings

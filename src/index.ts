@@ -66,8 +66,8 @@ const clients: HomelabClients = {
   prowlarr:   createProwlarrClient(),
   sabnzbd:    createSabnzbdClient(),
   overseerr:  createOverseerrClient(),
-  prometheus: createPrometheusClient(),
-  grafana:    createGrafanaClient(),
+  prometheus: tryCreate("Prometheus", createPrometheusClient),
+  grafana:    tryCreate("Grafana",    createGrafanaClient),
   getQnap,
 
   // Optional — missing env vars just skip the module

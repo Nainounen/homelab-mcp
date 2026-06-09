@@ -1,10 +1,12 @@
 {
   "name": "homelab-mcp",
-  "version": "2.0.0",
-  "description": "MCP server for Proxmox homelab — modular, AI-extensible",
+  "version": "2.0.1",
+  "description": "MCP server for Proxmox homelab — modular, AI-extensible. 65+ tools across 17 domains.",
+  "author": "Nino Meier <home.ninomeier@gmail.com>",
   "main": "dist/index.js",
   "files": [
     "dist/",
+    "assets/",
     "README.md",
     "LICENSE",
     ".env.example"
@@ -19,14 +21,30 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
     "homelab",
     "proxmox",
     "plex",
     "radarr",
     "sonarr",
     "sabnzbd",
+    "prowlarr",
+    "overseerr",
+    "jellyseerr",
+    "lidarr",
+    "readarr",
+    "tautulli",
+    "bazarr",
     "docker",
-    "model-context-protocol"
+    "prometheus",
+    "grafana",
+    "qnap",
+    "adguard",
+    "tailscale",
+    "uptime-kuma",
+    "telegram"
   ],
   "engines": {
     "node": ">=20"
