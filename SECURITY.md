@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you discover a security issue in homelab-mcp, please use GitHub's [private vulnerability reporting](https://github.com/ninomeier/homelab-mcp/security/advisories/new) or email **security@ninomeier.dev**. Do not open a public issue.
+If you discover a security issue in homelab-mcp, please use GitHub's [private vulnerability reporting](https://github.com/Nainounen/homelab-mcp/security/advisories/new) or email **security@ninomeier.dev**. Do not open a public issue.
 
 ## Security model
 

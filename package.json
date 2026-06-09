@@ -13,11 +13,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ninomeier/homelab-mcp"
+    "url": "https://github.com/Nainounen/homelab-mcp"
   },
-  "homepage": "https://github.com/ninomeier/homelab-mcp#readme",
+  "homepage": "https://github.com/Nainounen/homelab-mcp#readme",
   "bugs": {
-    "url": "https://github.com/ninomeier/homelab-mcp/issues"
+    "url": "https://github.com/Nainounen/homelab-mcp/issues"
   },
   "keywords": [
     "mcp",

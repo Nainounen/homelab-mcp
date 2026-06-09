@@ -1,6 +1,6 @@
 # homelab-mcp
 
-[![CI](https://github.com/ninomeier/homelab-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ninomeier/homelab-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/Nainounen/homelab-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Nainounen/homelab-mcp/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/homelab-mcp.svg)](https://www.npmjs.com/package/homelab-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node: >=20](https://img.shields.io/badge/node-%3E%3D20-green.svg)](https://nodejs.org/)
@@ -25,7 +25,7 @@ MCP server that gives Claude Code full control of a Proxmox homelab — manage V
 ### Install
 
 ```bash
-git clone https://github.com/ninomeier/homelab-mcp.git
+git clone https://github.com/Nainounen/homelab-mcp.git
 cd homelab-mcp
 npm install
 cp .env.example .env
