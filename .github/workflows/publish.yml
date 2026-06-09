@@ -26,4 +26,8 @@ jobs:
 
       - run: npm test
 
-      - run: npm publish --provenance --access public
+      - run: npm whoami
+
+      - run: npm owner ls homelab-mcp || true
+
+      - run: npm publish --provenance
