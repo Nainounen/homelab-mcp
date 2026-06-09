@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export class AdGuardClient {
   private http: AxiosInstance;
@@ -7,6 +10,7 @@ export class AdGuardClient {
     this.http = axios.create({
       baseURL: `${baseUrl}/control`,
       auth: { username, password },
+      httpAgent: keepAliveAgent,
       timeout: 10_000,
     });
   }

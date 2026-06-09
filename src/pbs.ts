@@ -22,7 +22,7 @@ export class PbsClient {
       baseURL: `${baseUrl}/api2/json`,
       headers: { Authorization: `PBSAPIToken=${tokenId}:${secret}` },
       timeout: 20_000,
-      httpsAgent: new https.Agent({ rejectUnauthorized: tlsVerify }),
+      httpsAgent: new https.Agent({ rejectUnauthorized: tlsVerify, keepAlive: true }),
     });
   }
 

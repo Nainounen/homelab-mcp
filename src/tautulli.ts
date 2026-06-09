@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export class TautulliClient {
   private http: AxiosInstance;
@@ -6,7 +9,7 @@ export class TautulliClient {
 
   constructor(baseUrl: string, apiKey: string) {
     this.apiKey = apiKey;
-    this.http = axios.create({ baseURL: baseUrl, timeout: 15_000 });
+    this.http = axios.create({ baseURL: baseUrl, httpAgent: keepAliveAgent, timeout: 15_000 });
   }
 
   async cmd<T>(command: string, extra?: Record<string, string | number>): Promise<T> {

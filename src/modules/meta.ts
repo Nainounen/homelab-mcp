@@ -1,10 +1,12 @@
 import { ToolModule } from "../types.js";
+import { cached } from "../utils.js";
 
 /**
  * Meta-module: discovery tool that lets an AI inspect the full capability surface
  * without needing to read the source code.
  *
  * homelab_capabilities — lists every domain + tool available, with descriptions.
+ * Result is cached for 60s since the tool list doesn't change at runtime.
  */
 export function metaModule(getModules: () => ToolModule[]): ToolModule {
   return {
@@ -23,21 +25,23 @@ export function metaModule(getModules: () => ToolModule[]): ToolModule {
     async handle(name, _args) {
       if (name !== "homelab_capabilities") return null;
 
-      const modules = getModules();
-      const lines: string[] = [
-        `Homelab MCP — ${modules.flatMap((m) => m.tools).length} tools across ${modules.length} domains\n`,
-      ];
+      return cached("homelab_capabilities", 60_000, async () => {
+        const modules = getModules();
+        const lines: string[] = [
+          `Homelab MCP — ${modules.flatMap((m) => m.tools).length} tools across ${modules.length} domains\n`,
+        ];
 
-      for (const mod of modules) {
-        lines.push(`## ${mod.domain} (${mod.tools.length} tools)`);
-        for (const tool of mod.tools) {
-          lines.push(`  ${tool.name}`);
-          lines.push(`    ${tool.description}`);
+        for (const mod of modules) {
+          lines.push(`## ${mod.domain} (${mod.tools.length} tools)`);
+          for (const tool of mod.tools) {
+            lines.push(`  ${tool.name}`);
+            lines.push(`    ${tool.description}`);
+          }
+          lines.push("");
         }
-        lines.push("");
-      }
 
-      return lines.join("\n");
+        return lines.join("\n");
+      });
     },
   };
 }

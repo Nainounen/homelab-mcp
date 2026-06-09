@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export interface GrafanaDashboard {
   uid: string;
@@ -22,6 +25,7 @@ export class GrafanaClient {
     this.http = axios.create({
       baseURL: baseUrl,
       headers: { Authorization: `Bearer ${token}` },
+      httpAgent: keepAliveAgent,
       timeout: 15_000,
     });
   }

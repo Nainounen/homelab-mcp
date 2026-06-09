@@ -22,25 +22,7 @@ import { createBazarrClient } from "./bazarr.js";
 import { createAdGuardClient } from "./adguard.js";
 import { createPbsClient } from "./pbs.js";
 import { buildModules, validateModules, HomelabClients } from "./modules/registry.js";
-
-// ─── Error sanitization ────────────────────────────────────────────────────────
-
-/**
- * Strip internal details (URLs, IPs, file paths, tokens) from error messages
- * before returning them to the MCP client.  Full errors are always logged to stderr.
- */
-function sanitizeError(err: unknown): string {
-  if (err instanceof Error) {
-    // Axios errors contain the full URL (with API keys in query params)
-    const msg = err.message
-      // Redact apikey query params first (before URL regex eats the whole URL)
-      .replace(/apikey=[^\s&]+/gi, "apikey=[redacted]")
-      .replace(/https?:\/\/[^\s]+/g, "[redacted-url]")
-      .replace(/\/[a-zA-Z0-9_-]{20,}/g, "/[redacted-token]");
-    return msg;
-  }
-  return String(err);
-}
+import { sanitizeError } from "./utils.js";
 
 // ─── Helper: try to create an optional client, skip with a warning if env vars missing ──
 
@@ -91,6 +73,15 @@ const clients: HomelabClients = {
 const MODULES = buildModules(clients);
 validateModules(MODULES);
 
+// ─── Build O(1) tool dispatch map ─────────────────────────────────────────────
+
+const toolMap = new Map<string, (args: Record<string, unknown>) => Promise<string | null>>();
+for (const mod of MODULES) {
+  for (const tool of mod.tools) {
+    toolMap.set(tool.name, (args) => mod.handle(tool.name, args));
+  }
+}
+
 // ─── Server ───────────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -107,10 +98,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>;
 
   try {
-    for (const mod of MODULES) {
-      const result = await mod.handle(name, args);
-      if (result !== null) return { content: [{ type: "text", text: result }] };
+    const handler = toolMap.get(name);
+    if (!handler) {
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        isError: true,
+      };
     }
+    const result = await handler(args);
+    if (result !== null) return { content: [{ type: "text", text: result }] };
     return {
       content: [{ type: "text", text: `Unknown tool: ${name}` }],
       isError: true,

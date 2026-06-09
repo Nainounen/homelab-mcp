@@ -3,6 +3,18 @@ import { ProxmoxSSH, DevboxSSH } from "../ssh.js";
 import { ArrClient } from "../arr.js";
 import { SabnzbdClient } from "../sabnzbd.js";
 import { bytes, speed } from "../utils.js";
+import * as fs from "fs";
+import * as path from "path";
+
+/** Load the media-health Python script once at startup. */
+const MEDIA_HEALTH_SCRIPT = (() => {
+  const scriptPath = path.resolve(__dirname, "..", "..", "scripts", "media-health.py");
+  if (fs.existsSync(scriptPath)) {
+    return fs.readFileSync(scriptPath, "utf8");
+  }
+  process.stderr.write("[homelab-mcp] WARNING: media-health.py not found — media_dashboard Python checks disabled\n");
+  return "";
+})();
 
 function diskPaths(): string {
   return process.env.DASHBOARD_DISK_PATHS ?? "";
@@ -29,80 +41,9 @@ export async function mediaDashboard(
       sonarr.get<Array<{ statistics?: { episodeFileCount: number; episodeCount: number } }>>("/series"),
       pveSSH.exec(`df -h ${disks} 2>/dev/null | tail -n +2 | awk '{print $6": "$3"/"$2" used, "$4" free"}'`),
       pveSSH.exec("nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null"),
-      devbox.exec(`python3 - <<'PY'
-import json, os, urllib.request
-from pathlib import Path
-
-def load_env(path: str) -> dict:
-  env = {}
-  for line in Path(path).read_text().splitlines():
-    if not line or line.startswith('#') or '=' not in line:
-      continue
-    key, value = line.split('=', 1)
-    env[key] = value
-  return env
-
-def fetch(url: str, api_key: str | None = None):
-  headers = {"X-Api-Key": api_key} if api_key else {}
-  req = urllib.request.Request(url, headers=headers)
-  with urllib.request.urlopen(req, timeout=10) as response:
-    return json.load(response)
-
-result = {}
-# Paths configurable via env vars on the devbox — no hardcoded assumptions
-media_env = os.environ.get("MEDIA_ENV_PATH", "/opt/media/.env")
-env = load_env(media_env)
-
-# SABnzbd — read API key from its config file
-sab_config = os.environ.get("SABNZBD_CONFIG_PATH", "/opt/media/config/sabnzbd/sabnzbd.ini")
-sab_port  = os.environ.get("SABNZBD_PORT", "8085")
-try:
-  sab_ini = Path(sab_config).read_text().splitlines()
-  sab_key = next(line.split(' = ', 1)[1].strip() for line in sab_ini if line.startswith('api_key = '))
-  sab_queue = fetch(f'http://127.0.0.1:{sab_port}/api?mode=queue&output=json&apikey={sab_key}')
-  q = sab_queue.get('queue', {})
-  result['sab'] = {
-    'status': q.get('status', 'unknown'),
-    'speed': float(q.get('kbpersec', 0) or 0),
-    'jobs': int(q.get('noofslots', 0) or 0),
-    'sizeleft': q.get('sizeleft', '0 B'),
-  }
-except Exception as exc:
-  result['sab_error'] = str(exc)
-
-# Prowlarr
-prowlarr_port = os.environ.get("PROWLARR_PORT", "9696")
-try:
-  prowlarr_key = env.get('PROWLARR_API_KEY')
-  if prowlarr_key:
-    health = fetch(f'http://127.0.0.1:{prowlarr_port}/api/v1/health', prowlarr_key)
-    indexers = fetch(f'http://127.0.0.1:{prowlarr_port}/api/v1/indexer', prowlarr_key)
-    result['prowlarr'] = {
-      'enabled_indexers': sum(1 for i in indexers if i.get('enable')),
-      'health_warnings': len(health),
-    }
-except Exception as exc:
-  result['prowlarr_error'] = str(exc)
-
-# Overseerr
-overseerr_port = os.environ.get("OVERSEERR_PORT", "5055")
-try:
-  overseerr_key = env.get('OVERSEERR_API_KEY')
-  if overseerr_key:
-    status = fetch(f'http://127.0.0.1:{overseerr_port}/api/v1/status', overseerr_key)
-    counts = fetch(f'http://127.0.0.1:{overseerr_port}/api/v1/request/count', overseerr_key)
-    result['seerr'] = {
-      'version': status.get('version'),
-      'pending': counts.get('pending'),
-      'processing': counts.get('processing'),
-      'approved': counts.get('approved'),
-      'available': counts.get('available'),
-    }
-except Exception as exc:
-  result['seerr_error'] = str(exc)
-
-print(json.dumps(result))
-PY`),
+      MEDIA_HEALTH_SCRIPT
+        ? devbox.exec(`python3 - <<'PY'\n${MEDIA_HEALTH_SCRIPT}\nPY`)
+        : Promise.resolve({ stdout: "{}", stderr: "", exitCode: 0 }),
     ]);
 
   // Node

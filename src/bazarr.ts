@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export class BazarrClient {
   private http: AxiosInstance;
@@ -7,6 +10,7 @@ export class BazarrClient {
     this.http = axios.create({
       baseURL: baseUrl,
       headers: { "X-API-KEY": apiKey },
+      httpAgent: keepAliveAgent,
       timeout: 15_000,
     });
   }

@@ -1,19 +1,5 @@
 import { describe, it, expect } from "vitest";
-
-/**
- * Replicate the sanitizeError function from index.ts to test independently.
- */
-function sanitizeError(err: unknown): string {
-  if (err instanceof Error) {
-    const msg = err.message
-      // Redact apikey query params first (before the URL pattern eats the whole URL)
-      .replace(/apikey=[^\s&]+/gi, "apikey=[redacted]")
-      .replace(/https?:\/\/[^\s]+/g, "[redacted-url]")
-      .replace(/\/[a-zA-Z0-9_-]{20,}/g, "/[redacted-token]");
-    return msg;
-  }
-  return String(err);
-}
+import { sanitizeError } from "../utils.js";
 
 describe("sanitizeError", () => {
   it("redacts URLs from error messages", () => {
@@ -29,8 +15,6 @@ describe("sanitizeError", () => {
   });
 
   it("redacts API keys in query params", () => {
-    // When the apikey is inside a URL, the URL regex eats the whole thing.
-    // Both the URL and the secret are protected.
     const err = new Error("Request failed: http://host/api?apikey=abc123secret456&mode=queue");
     const sanitized = sanitizeError(err);
     expect(sanitized).not.toContain("abc123secret456");

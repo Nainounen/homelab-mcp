@@ -12,12 +12,27 @@ export const ExecSchema = z.object({
     .describe("Working directory (default: /root)"),
 });
 
+/** Paths that should never be readable via the MCP tool, even if filesystem perms allow it. */
+const SENSITIVE_PREFIXES = ["/etc/", "/root/.ssh", "/boot/", "/sys/", "/proc/"];
+
 export const ReadFileSchema = z.object({
-  path: z.string().describe("Absolute path of the file to read"),
+  path: z
+    .string()
+    .describe("Absolute path of the file to read")
+    .refine((p) => !p.includes(".."), { message: "Path traversal (..) is not allowed" })
+    .refine((p) => !SENSITIVE_PREFIXES.some((prefix) => p.startsWith(prefix)), {
+      message: `Reading from sensitive system directories is blocked`,
+    }),
 });
 
 export const WriteFileSchema = z.object({
-  path: z.string().describe("Absolute path of the file to write"),
+  path: z
+    .string()
+    .describe("Absolute path of the file to write")
+    .refine((p) => !p.includes(".."), { message: "Path traversal (..) is not allowed" })
+    .refine((p) => !p.startsWith("/etc/") && !p.startsWith("/boot/") && !p.startsWith("/sys/"), {
+      message: "Writing to system directories is blocked",
+    }),
   content: z.string().max(1_048_576, "Content exceeds 1 MB limit").describe("File content to write (max 1 MB)"),
 });
 

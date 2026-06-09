@@ -1,5 +1,9 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
 import https from "https";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
 
 interface AuthTicket {
   ticket: string;
@@ -36,7 +40,7 @@ export class ProxmoxClient {
     }
     this.http = axios.create({
       baseURL: `https://${config.host}:${config.port}/api2/json`,
-      httpsAgent: new https.Agent({ rejectUnauthorized: tlsVerify }),
+      httpsAgent: new https.Agent({ rejectUnauthorized: tlsVerify, keepAlive: true }),
       timeout: 15000,
     });
   }

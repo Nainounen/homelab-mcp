@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export class ProwlarrClient {
   private http: AxiosInstance;
@@ -7,6 +10,7 @@ export class ProwlarrClient {
     this.http = axios.create({
       baseURL: `${baseUrl}/api/v1`,
       headers: { "X-Api-Key": apiKey },
+      httpAgent: keepAliveAgent,
       timeout: 15_000,
     });
   }

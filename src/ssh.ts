@@ -34,7 +34,7 @@ export interface ExecResult {
 }
 
 /** Commands that are too dangerous to forward to the devbox. */
-const BLOCKED_PATTERNS = [
+export const BLOCKED_PATTERNS = [
   /rm\s+-rf\s+\//,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
@@ -44,7 +44,7 @@ const BLOCKED_PATTERNS = [
   /\bhalt\b/,
   /\binit\s+0\b/,
   /systemctl\s+(reboot|poweroff|halt|shutdown)/,
-  /\bsystemctl\s+stop\s+ssh\b/,
+  /\bsystemctl\s+stop\s+(ssh|sshd|ssh\.service|ssh\.socket)\b/,
 ];
 
 /**
@@ -163,7 +163,7 @@ export function getDevbox(): DevboxSSH {
 
 // ─── Proxmox SSH ──────────────────────────────────────────────────────────────
 
-const PVE_BLOCKED_PATTERNS = [
+export const PVE_BLOCKED_PATTERNS = [
   /rm\s+-rf\s+\/(?:\s|$)/,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,

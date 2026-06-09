@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export class ArrClient {
   private http: AxiosInstance;
@@ -7,6 +10,7 @@ export class ArrClient {
     this.http = axios.create({
       baseURL: `${baseUrl}/${apiPath}`,
       headers: { "X-Api-Key": apiKey },
+      httpAgent: keepAliveAgent,
       timeout: 45_000,
     });
   }

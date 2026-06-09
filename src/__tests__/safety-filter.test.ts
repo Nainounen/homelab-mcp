@@ -1,33 +1,5 @@
 import { describe, it, expect } from "vitest";
-
-/**
- * Extract the BLOCKED_PATTERNS regexps from ssh.ts by duplicating them.
- * We test against the actual patterns used at runtime.
- */
-const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\//,
-  /mkfs\b/,
-  /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
-  /\bshutdown\b/,
-  /\breboot\b/,
-  /\bpoweroff\b/,
-  /\bhalt\b/,
-  /\binit\s+0\b/,
-  /systemctl\s+(reboot|poweroff|halt|shutdown)/,
-  /\bsystemctl\s+stop\s+ssh\b/,
-];
-
-const PVE_BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\/(?:\s|$)/,
-  /mkfs\b/,
-  /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
-  /\bpoweroff\b/,
-  /\bhalt\b/,
-  /\bshutdown\b/,
-  /\breboot\b/,
-  /\binit\s+0\b/,
-  /systemctl\s+(reboot|poweroff|halt|shutdown)/,
-];
+import { BLOCKED_PATTERNS, PVE_BLOCKED_PATTERNS } from "../ssh.js";
 
 function isBlocked(command: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(command));
@@ -60,9 +32,16 @@ describe("devbox safety filter (BLOCKED_PATTERNS)", () => {
     expect(isBlocked("systemctl stop ssh", BLOCKED_PATTERNS)).toBe(true);
   });
 
-  it("does not block systemctl stop sshd (pattern targets ssh, not sshd)", () => {
-    // The pattern is /\bsystemctl\s+stop\s+ssh\b/ — "sshd" doesn't end at "ssh"
-    expect(isBlocked("systemctl stop sshd", BLOCKED_PATTERNS)).toBe(false);
+  it("blocks systemctl stop sshd (now covered by expanded pattern)", () => {
+    expect(isBlocked("systemctl stop sshd", BLOCKED_PATTERNS)).toBe(true);
+  });
+
+  it("blocks systemctl stop ssh.service", () => {
+    expect(isBlocked("systemctl stop ssh.service", BLOCKED_PATTERNS)).toBe(true);
+  });
+
+  it("blocks systemctl stop ssh.socket", () => {
+    expect(isBlocked("systemctl stop ssh.socket", BLOCKED_PATTERNS)).toBe(true);
   });
 
   it("blocks systemctl shutdown variants", () => {
@@ -78,8 +57,7 @@ describe("devbox safety filter (BLOCKED_PATTERNS)", () => {
     expect(isBlocked("cat /etc/hostname", BLOCKED_PATTERNS)).toBe(false);
   });
 
-  it("allows commands containing blocklist words as substrings", () => {
-    // "reboot" inside a longer string should still be blocked
+  it("blocks commands containing blocklist words as substrings", () => {
     expect(isBlocked("echo reboot-required", BLOCKED_PATTERNS)).toBe(true);
   });
 
@@ -89,7 +67,6 @@ describe("devbox safety filter (BLOCKED_PATTERNS)", () => {
   });
 
   it("allows systemctl status in PVE patterns", () => {
-    // systemctl status should NOT match
     expect(isBlocked("systemctl status sshd", PVE_BLOCKED_PATTERNS)).toBe(false);
   });
 });

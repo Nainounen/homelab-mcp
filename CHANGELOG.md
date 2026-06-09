@@ -2,7 +2,41 @@
 
 All notable changes to the homelab-mcp server.
 
-## [2.0.1] — 2026-06-09
+## [2.2.0] — 2026-06-09
+
+### Security
+- **Safety filter**: `systemctl stop sshd`, `ssh.service`, and `ssh.socket` are now blocked (was: only `ssh`)
+- **Path traversal**: `..` rejected in file read/write paths; writing to `/etc/`, `/boot/`, `/sys/` blocked; reading from sensitive system directories blocked
+- Safety filter regex patterns and `sanitizeError` exported for direct test coverage (tests no longer duplicate implementation)
+
+### Added
+- **HTTP keep-alive** on all 11 HTTP clients (Proxmox, Radarr, Sonarr, Prowlarr, SABnzbd, Overseerr, Prometheus, Grafana, PBS, Uptime Kuma, AdGuard, Tautulli, Bazarr) — reduces TCP handshake overhead
+- **O(1) tool dispatch**: `Map`-based lookup replaces linear `for...of` scan across all modules
+- **Response caching**: `homelab_capabilities` (60s TTL) and `homelab_health` (30s TTL) via `cached()` utility
+- **ESLint + Prettier** config for consistent code style
+- **Integration tests**: 11 test cases covering module registry validation and tool dispatch with mocked clients
+- **Orchestration docs**: `docs/orchestration.md` — workflows, automation patterns, troubleshooting recipes, tool dependency map
+
+### Changed
+- **`sanitizeError` moved to `utils.ts`** — shared between `index.ts` and tests, no more copy-paste
+- **Media dashboard Python script extracted** to `scripts/media-health.py` — version-controllable, documented, properly formatted
+- Vitest include pattern relaxed from `src/__tests__/**/*.test.ts` to `src/**/*.test.ts` for co-located tests
+- All test suites now import directly from source modules instead of duplicating logic
+
+## [2.1.0] — 2026-06-03
+
+### Added
+- AI-native setup wizard (`homelab_setup`) with three modes: status, configure, test
+- Secret masking: `PASSWORD`, `API_KEY`, `TOKEN`, `SECRET` values replaced with `••••••••` in all AI-facing output
+- Error sanitization: URLs, API keys, and token-like path segments redacted before reaching the MCP client
+- Published to npm as `homelab-mcp`
+- `.mcp.example.json` for MCP client configuration
+
+### Changed
+- Fixed npm package name, GitHub URLs, and author field
+- Setup wizard credentials never exposed to the AI
+
+## [2.0.1] — 2026-06-02
 
 ### Added
 - Community health files: issue/PR templates, CODE_OF_CONDUCT.md

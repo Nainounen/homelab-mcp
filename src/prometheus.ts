@@ -1,4 +1,7 @@
 import axios, { AxiosInstance } from "axios";
+import http from "http";
+
+const keepAliveAgent = new http.Agent({ keepAlive: true });
 
 export interface PrometheusResult {
   metric: Record<string, string>;
@@ -14,7 +17,7 @@ export class PrometheusClient {
   private http: AxiosInstance;
 
   constructor(baseUrl: string) {
-    this.http = axios.create({ baseURL: baseUrl, timeout: 15_000 });
+    this.http = axios.create({ baseURL: baseUrl, httpAgent: keepAliveAgent, timeout: 15_000 });
   }
 
   async query(promql: string): Promise<PrometheusResult[]> {
