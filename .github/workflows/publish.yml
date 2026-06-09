@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required for OIDC trusted publisher
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +26,6 @@ jobs:
 
       - run: npm test
 
-      - run: npm whoami
-
-      - run: npm owner ls homelab-mcp || true
-
       - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
