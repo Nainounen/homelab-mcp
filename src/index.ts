@@ -94,7 +94,7 @@ validateModules(MODULES);
 // ─── Server ───────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "homelab-mcp", version: "2.0.2" },
+  { name: "homelab-mcp", version: "2.1.0" },
   { capabilities: { tools: {} } }
 );
 

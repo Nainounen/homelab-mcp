@@ -32,12 +32,18 @@ Claude will read your current `.env`, ask you for each setting interactively, sa
 
 ### Install
 
+**From npm (recommended):**
+```bash
+npm install -g homelab-mcp
+# Or locally in your Claude Code project:
+npm install homelab-mcp
+```
+
+**From source (for contributors):**
 ```bash
 git clone https://github.com/Nainounen/homelab-mcp.git
 cd homelab-mcp
 npm install
-cp .env.example .env
-# Edit .env with your homelab IPs, credentials, and API keys
 npm run build
 ```
 
@@ -61,15 +67,17 @@ Add to `~/.claude/claude_mcp_config.json`:
 {
   "mcpServers": {
     "homelab": {
-      "command": "node",
-      "args": ["/absolute/path/to/homelab-mcp/dist/index.js"],
-      "cwd": "/absolute/path/to/homelab-mcp"
+      "command": "npx",
+      "args": ["homelab-mcp"],
+      "cwd": "/path/to/your/homelab-config"
     }
   }
 }
 ```
 
-No secrets go in the MCP config — the server loads `.env` from its working directory.
+Place your `.env` file in the `cwd` directory (copy `.env.example` from this repo as a starting point). No secrets go in the MCP config — the server loads `.env` from its working directory.
+
+Then just say **"set up my homelab"** in Claude Code — the AI-native setup wizard will guide you through the rest.
 
 ## Configuration
 

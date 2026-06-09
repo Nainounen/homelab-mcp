@@ -3,6 +3,22 @@ import * as path from "path";
 import { z } from "zod";
 import { homelabHealth } from "./health.js";
 
+// ─── Security: secret detection ────────────────────────────────────────────────
+
+/**
+ * Keys matching these patterns are NEVER returned to the AI.
+ * Their values are replaced with "••••••••" in all tool output.
+ *
+ * This is the single source of truth for secret masking. All display logic
+ * routes through this function — when adding a new env var that holds a
+ * credential, make sure its name matches one of these patterns.
+ */
+const SECRET_KEY_PATTERNS = ["PASSWORD", "API_KEY", "TOKEN", "SECRET"];
+
+function isSecretKey(key: string): boolean {
+  return SECRET_KEY_PATTERNS.some((p) => key.includes(p));
+}
+
 // ─── Env var metadata ──────────────────────────────────────────────────────────
 
 interface EnvVarMeta {
@@ -269,9 +285,9 @@ function buildStatus(): { sections: SetupStatus[]; allDone: boolean; totalRequir
       key: meta.key,
       description: meta.description,
       configured,
-      currentValue: configured ? (meta.key.includes("PASSWORD") || meta.key.includes("API_KEY") || meta.key.includes("TOKEN") || meta.key.includes("SECRET")
-        ? "••••••••"
-        : currentValue) : "",
+      currentValue: configured
+        ? (isSecretKey(meta.key) ? "••••••••" : currentValue)
+        : "",
       hint: meta.hint,
     });
   }
@@ -396,8 +412,7 @@ export async function homelabSetup(
       const lines: string[] = [
         `Saved ${input.updates.length} setting(s):\n`,
         ...input.updates.map(u => {
-          const display = u.key.includes("PASSWORD") || u.key.includes("API_KEY") || u.key.includes("TOKEN") || u.key.includes("SECRET")
-            ? "••••••••" : u.value;
+          const display = isSecretKey(u.key) ? "••••••••" : u.value;
           return `  ✓ ${u.key}=${display}`;
         }),
         "",
