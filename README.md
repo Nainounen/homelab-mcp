@@ -9,17 +9,17 @@
 
 <img src="assets/banner.png" alt="homelab-mcp banner" width="800">
 
-MCP server that gives Claude Code full control of a Proxmox homelab — manage VMs and containers, deploy Docker projects, monitor services, control the media stack, and check storage health, all from conversation.
+MCP server that gives AI assistants full control of a Proxmox homelab — manage VMs and containers, deploy Docker projects, monitor services, control the media stack, and check storage health, all from conversation.
 
 **65+ tools across 17 domains.** Modular architecture designed for AI-assisted extensibility.
 
 ## AI Setup
 
-**No manual config needed.** The server includes an AI-native setup wizard. Just connect it to Claude Code and say:
+**No manual config needed.** The server includes an AI-native setup wizard. Just connect it to your MCP client and say:
 
 > "Set up my homelab" or "Configure the MCP server"
 
-Claude will read your current `.env`, ask you for each setting interactively, save your answers, and verify connectivity — all through conversation. No need to dig through docs or edit config files manually.
+The setup wizard scans your configuration, guides you through each setting interactively, saves your answers, and verifies connectivity — all through conversation. Credentials are never exposed to the AI; the wizard masks passwords, API keys, and tokens before returning any results.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ Claude will read your current `.env`, ask you for each setting interactively, sa
 **From npm (recommended):**
 ```bash
 npm install -g homelab-mcp
-# Or locally in your Claude Code project:
+# Or locally in your project:
 npm install homelab-mcp
 ```
 
@@ -59,9 +59,9 @@ docker compose up -d
 
 For most users, running directly with Node.js (no Docker) is simpler — the MCP server communicates over stdio.
 
-### Connect to Claude Code
+### Connect to your MCP client
 
-Add to `~/.claude/claude_mcp_config.json`:
+Add to your MCP client's config file. For Claude Code, that's `~/.claude/claude_mcp_config.json`:
 
 ```json
 {
@@ -77,7 +77,7 @@ Add to `~/.claude/claude_mcp_config.json`:
 
 Place your `.env` file in the `cwd` directory (copy `.env.example` from this repo as a starting point). No secrets go in the MCP config — the server loads `.env` from its working directory.
 
-Then just say **"set up my homelab"** in Claude Code — the AI-native setup wizard will guide you through the rest.
+Then just say **"set up my homelab"** — the AI-native setup wizard will guide you through the rest.
 
 ## Configuration
 
