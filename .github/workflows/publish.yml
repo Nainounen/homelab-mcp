@@ -20,8 +20,9 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
 
-      # Required: npm >= 11.5.1 for OIDC trusted publishers
       - run: npm install -g npm@latest
+
+      - run: npm whoami
 
       - run: npm ci
 
