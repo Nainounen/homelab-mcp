@@ -18,12 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.14"
+          registry-url: "https://registry.npmjs.org"
 
       - run: npm install -g npm@latest
-
-      - run: rm -f /home/runner/work/_temp/.npmrc
-
-      - run: npm config set registry https://registry.npmjs.org
 
       - run: npm ci
 
@@ -32,3 +29,5 @@ jobs:
       - run: npm test
 
       - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

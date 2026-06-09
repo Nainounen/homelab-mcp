@@ -1,6 +1,6 @@
 {
   "name": "homelab-mcp",
-  "version": "2.2.7",
+  "version": "2.2.8",
   "description": "MCP server for Proxmox homelab — modular, AI-extensible. 65+ tools across 17 domains.",
   "author": "Nino Meier <home.ninomeier@gmail.com>",
   "main": "dist/index.js",
