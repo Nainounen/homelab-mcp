@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DevboxSSH } from "../ssh.js";
+import { shellEscape } from "../utils.js";
 
 // ─── Input schemas ────────────────────────────────────────────────────────────
 
@@ -37,7 +38,13 @@ export const WriteFileSchema = z.object({
 });
 
 export const ListDirSchema = z.object({
-  path: z.string().describe("Absolute path of the directory to list"),
+  path: z
+    .string()
+    .describe("Absolute path of the directory to list")
+    .refine((p) => !p.includes(".."), { message: "Path traversal (..) is not allowed" })
+    .refine((p) => !SENSITIVE_PREFIXES.some((prefix) => p.startsWith(prefix)), {
+      message: "Listing sensitive system directories is blocked",
+    }),
 });
 
 export const DockerComposeSchema = z.object({
@@ -121,7 +128,7 @@ export async function devboxReadFile(
   ssh: DevboxSSH,
   input: z.infer<typeof ReadFileSchema>
 ): Promise<string> {
-  const result = await ssh.exec(`cat "${input.path}"`);
+  const result = await ssh.exec(`cat ${shellEscape(input.path)}`);
   if (result.exitCode !== 0) {
     throw new Error(result.stderr || `cat exited with code ${result.exitCode}`);
   }
@@ -151,7 +158,7 @@ export async function devboxListDir(
   ssh: DevboxSSH,
   input: z.infer<typeof ListDirSchema>
 ): Promise<string> {
-  const result = await ssh.exec(`ls -la "${input.path}"`);
+  const result = await ssh.exec(`ls -la ${shellEscape(input.path)}`);
   if (result.exitCode !== 0) {
     throw new Error(result.stderr || `ls exited with code ${result.exitCode}`);
   }
@@ -181,7 +188,7 @@ export async function devboxDockerCompose(
   ssh: DevboxSSH,
   input: z.infer<typeof DockerComposeSchema>
 ): Promise<string> {
-  const svc = input.service ? ` ${input.service}` : "";
+  const svc = input.service ? ` ${shellEscape(input.service)}` : "";
   let cmd: string;
 
   switch (input.action) {
@@ -235,9 +242,9 @@ export async function devboxGit(
       const dir = input.repo_dir;
       const parent = dir.substring(0, dir.lastIndexOf("/"));
       if (parent) {
-        await ssh.exec(`mkdir -p "${parent}"`);
+        await ssh.exec(`mkdir -p ${shellEscape(parent)}`);
       }
-      cmd = `git clone -b ${branch} ${url} "${dir}"`;
+      cmd = `git clone -b ${shellEscape(branch)} ${shellEscape(url)} "${dir}"`;
       cwd = undefined; // clone runs from any directory
       break;
     }
@@ -267,27 +274,27 @@ export async function devboxProjectDeploy(
 
   // 1. Git pull if it's a git repo
   const gitCheck = await ssh.exec(
-    `test -d "${dir}/.git" && echo "yes" || echo "no"`
+    `test -d ${shellEscape(dir + "/.git")} && echo "yes" || echo "no"`
   );
   if (gitCheck.stdout.trim() === "yes") {
-    const pull = await ssh.exec(`cd "${dir}" && git pull`);
+    const pull = await ssh.exec(`cd ${shellEscape(dir)} && git pull`);
     const pullOut = (pull.stdout || pull.stderr || "").trim();
     lines.push(`[git pull] ${pullOut || "up to date"}`);
   }
 
   // 2. Pull latest images
-  const pull = await ssh.exec(`cd "${dir}" && docker compose pull 2>&1`);
+  const pull = await ssh.exec(`cd ${shellEscape(dir)} && docker compose pull 2>&1`);
   const pullOut = (pull.stdout || pull.stderr || "").trim();
   lines.push(`[compose pull] ${pullOut || "done"}`);
 
   // 3. Docker compose up -d
-  const up = await ssh.exec(`cd "${dir}" && docker compose up -d 2>&1`);
+  const up = await ssh.exec(`cd ${shellEscape(dir)} && docker compose up -d 2>&1`);
   const upOut = (up.stdout || up.stderr || "").trim();
   lines.push(`[compose up] ${upOut || "done"}`);
 
   // 4. Quick container status
   const ps = await ssh.exec(
-    `cd "${dir}" && docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>&1`
+    `cd ${shellEscape(dir)} && docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>&1`
   );
   lines.push(`[status]\n${ps.stdout || "(no containers)"}`);
 
@@ -307,13 +314,13 @@ export async function devboxProjectStatus(
 
   // Container status
   const ps = await ssh.exec(
-    `cd "${dir}" && docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>&1`
+    `cd ${shellEscape(dir)} && docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>&1`
   );
   lines.push(`Containers:\n${ps.stdout || "(no containers running)"}`);
 
   // Recent logs (last 20 lines, truncated to 3000 chars to avoid bloat)
   const logs = await ssh.exec(
-    `cd "${dir}" && docker compose logs --tail=20 2>&1`
+    `cd ${shellEscape(dir)} && docker compose logs --tail=20 2>&1`
   );
   const logText = (logs.stdout || logs.stderr || "").trim();
   if (logText) {
@@ -334,7 +341,7 @@ export async function devboxProjectList(
   input: z.infer<typeof ProjectListSchema>
 ): Promise<string> {
   const find = await ssh.exec(
-    `find "${input.base_path}" -maxdepth 2 \( -name "docker-compose.yml" -o -name "compose.yml" \) 2>/dev/null`
+    `find ${shellEscape(input.base_path)} -maxdepth 2 \( -name "docker-compose.yml" -o -name "compose.yml" \) 2>/dev/null`
   );
 
   const composeFiles = find.stdout.trim().split("\n").filter(Boolean);
@@ -350,13 +357,13 @@ export async function devboxProjectList(
 
     // Git remote
     const git = await ssh.exec(
-      `cd "${dir}" 2>/dev/null && git remote get-url origin 2>/dev/null || echo "(no git)"`
+      `cd ${shellEscape(dir)} 2>/dev/null && git remote get-url origin 2>/dev/null || echo "(no git)"`
     );
     const remote = git.stdout.trim() || "(no git remote)";
 
     // Container status
     const ps = await ssh.exec(
-      `cd "${dir}" && docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null`
+      `cd ${shellEscape(dir)} && docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null`
     );
     const status = ps.stdout?.trim() || "(no containers)";
 

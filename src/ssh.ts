@@ -1,6 +1,7 @@
 import { NodeSSH } from "node-ssh";
 import { homedir } from "os";
 import { resolve } from "path";
+import { shellEscape } from "./utils.js";
 
 function resolveKeyPath(p: string): string {
   if (p.startsWith("~/") || p === "~") return resolve(homedir(), p.slice(2));
@@ -166,11 +167,11 @@ export class DevboxSSH {
     // Ensure parent directory exists
     const dir = path.substring(0, path.lastIndexOf("/"));
     if (dir) {
-      await this.exec(`mkdir -p "${dir}"`);
+      await this.exec(`mkdir -p ${shellEscape(dir)}`);
     }
     // Encode on the client side, decode remotely — avoids heredoc quoting issues
     const b64 = Buffer.from(content, "utf8").toString("base64");
-    const result = await this.exec(`printf '%s' "${b64}" | base64 -d > "${path}"`);
+    const result = await this.exec(`printf '%s' "${b64}" | base64 -d > ${shellEscape(path)}`);
     if (result.exitCode !== 0) {
       throw new Error(`writeFile failed: ${result.stderr}`);
     }

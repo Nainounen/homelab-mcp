@@ -12,6 +12,19 @@ export function speed(n: number): string {
   return "0 KB/s";
 }
 
+/**
+ * Escape a string for safe interpolation into a POSIX shell command.
+ *
+ * Wraps the value in single quotes and escapes any embedded single quotes
+ * using the standard '\'' sequence (end quote, escaped quote, resume quote).
+ * This prevents command injection via shell metacharacters ($, `, ;, |, &, etc.)
+ *
+ * Example:  "foo'bar" → 'foo'\''bar'
+ */
+export function shellEscape(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 // ─── Retry logic for transient HTTP failures ───────────────────────────────────
 
 function isRetryable(err: unknown): boolean {

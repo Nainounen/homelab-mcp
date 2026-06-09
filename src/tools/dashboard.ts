@@ -2,11 +2,19 @@ import { ProxmoxClient } from "../proxmox.js";
 import { ProxmoxSSH, DevboxSSH } from "../ssh.js";
 import { ArrClient } from "../arr.js";
 import { SabnzbdClient } from "../sabnzbd.js";
-import { bytes, speed } from "../utils.js";
+import { bytes, speed, shellEscape } from "../utils.js";
 import * as fs from "fs";
 import * as path from "path";
 
-/** Load the media-health Python script once at startup. */
+/**
+ * Load the media-health Python script once at startup.
+ *
+ * SECURITY: This script is loaded from disk at startup — it is operator-controlled,
+ * not user-supplied. The script path is resolved relative to this source file and
+ * cannot be influenced by tool input or environment variables. Only the operator
+ * with filesystem access to the MCP server's installation directory can modify it.
+ * If the script file is absent, media-service health checks are silently disabled.
+ */
 const MEDIA_HEALTH_SCRIPT = (() => {
   const scriptPath = path.resolve(__dirname, "..", "..", "scripts", "media-health.py");
   if (fs.existsSync(scriptPath)) {
@@ -16,8 +24,24 @@ const MEDIA_HEALTH_SCRIPT = (() => {
   return "";
 })();
 
+/**
+ * Returns validated disk paths from DASHBOARD_DISK_PATHS env var.
+ * Only absolute paths with safe characters (alphanumeric, /, -, _, .) are allowed.
+ * Any path containing shell metacharacters is rejected and logged.
+ */
 function diskPaths(): string {
-  return process.env.DASHBOARD_DISK_PATHS ?? "";
+  const raw = (process.env.DASHBOARD_DISK_PATHS ?? "").trim();
+  if (!raw) return "";
+  const paths = raw.split(/\s+/).filter(Boolean);
+  for (const p of paths) {
+    if (!/^\/[a-zA-Z0-9\/_\-\.]+$/.test(p)) {
+      process.stderr.write(
+        `[homelab-mcp] WARNING: DASHBOARD_DISK_PATHS contains unsafe path "${p}" — all paths skipped\n`
+      );
+      return "";
+    }
+  }
+  return raw;
 }
 
 export async function mediaDashboard(
@@ -39,7 +63,7 @@ export async function mediaDashboard(
       sonarr.get<{ records: Array<{ title: string; status: string; size: number; sizeleft: number; timeleft?: string }> }>("/queue"),
       radarr.get<Array<{ hasFile: boolean }>>("/movie"),
       sonarr.get<Array<{ statistics?: { episodeFileCount: number; episodeCount: number } }>>("/series"),
-      pveSSH.exec(`df -h ${disks} 2>/dev/null | tail -n +2 | awk '{print $6": "$3"/"$2" used, "$4" free"}'`),
+      pveSSH.exec(`df -h ${shellEscape(disks)} 2>/dev/null | tail -n +2 | awk '{print $6": "$3"/"$2" used, "$4" free"}'`),
       pveSSH.exec("nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null"),
       MEDIA_HEALTH_SCRIPT
         ? devbox.exec(`python3 - <<'PY'\n${MEDIA_HEALTH_SCRIPT}\nPY`)
