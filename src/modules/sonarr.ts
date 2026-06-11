@@ -34,8 +34,16 @@ export function sonarrModule(client: ArrClient): ToolModule {
       },
       {
         name: "sonarr_list_series",
-        description: "List all TV series in the Sonarr library with episode counts and download progress.",
-        inputSchema: { type: "object", properties: {}, required: [] },
+        description: "List TV series in the Sonarr library with episode counts and download progress. Supports filtering and search to keep output small.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            filter: { type: "string", enum: ["all", "missing", "complete", "unmonitored"], description: "Filter by status (default: all)" },
+            search: { type: "string", description: "Only show titles containing this text" },
+            limit: { type: "number", description: "Max titles to return (default 100)" },
+          },
+          required: [],
+        },
       },
       {
         name: "sonarr_remove_series",
@@ -133,7 +141,7 @@ export function sonarrModule(client: ArrClient): ToolModule {
       switch (name) {
         case "sonarr_search_series":     return impl.sonarrSearchSeries(client, impl.SonarrSearchSchema.parse(args));
         case "sonarr_add_series":        return impl.sonarrAddSeries(client, impl.SonarrAddSeriesSchema.parse(args));
-        case "sonarr_list_series":       return impl.sonarrListSeries(client);
+        case "sonarr_list_series":       return impl.sonarrListSeries(client, impl.SonarrListSeriesSchema.parse(args));
         case "sonarr_remove_series":     return impl.sonarrRemoveSeries(client, impl.SonarrRemoveSeriesSchema.parse(args));
         case "sonarr_get_queue":         return impl.sonarrGetQueue(client);
         case "sonarr_force_search":      return impl.sonarrForceSearch(client, impl.SonarrForceSearchSchema.parse(args));

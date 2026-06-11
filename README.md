@@ -122,6 +122,15 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `PROXMOX_TLS_VERIFY` | `false` | Set to `true` to validate Proxmox TLS certificates |
 | `PBS_TLS_VERIFY` | `false` | Set to `true` to validate PBS TLS certificates |
 
+### Tuning
+
+| Variable | Default | Description |
+|---|---|---|
+| `MAX_OUTPUT_CHARS` | `30000` | Max characters per tool result before truncation (`0` disables) |
+| `HTTP_RETRIES` | `3` | Retries for transient HTTP failures (`0` disables) |
+| `DEVBOX_CMD_TIMEOUT` | `30000` | Devbox SSH command timeout in ms |
+| `PROXMOX_CMD_TIMEOUT` | `60000` | Proxmox SSH command timeout in ms |
+
 ## Tools reference
 
 ### Infrastructure
@@ -160,7 +169,7 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 |---|---|
 | `radarr_search_movie` | Search for a movie by title |
 | `radarr_add_movie` | Add a movie and trigger download search |
-| `radarr_list_movies` | List all movies with download status |
+| `radarr_list_movies` | List movies with download status (filter/search/limit) |
 | `radarr_remove_movie` | Remove a movie (optionally delete files) |
 | `radarr_get_queue` | Active movie downloads with progress |
 | `radarr_force_search` | Re-search indexers for a movie |
@@ -173,7 +182,7 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `radarr_set_path_mapping` | Add/update a path mapping |
 | `sonarr_search_series` | Search for a TV series by title |
 | `sonarr_add_series` | Add a series and trigger download |
-| `sonarr_list_series` | List all series with episode progress |
+| `sonarr_list_series` | List series with episode progress (filter/search/limit) |
 | `sonarr_remove_series` | Remove a series (optionally delete files) |
 | `sonarr_get_queue` | Active episode downloads with progress |
 | `sonarr_force_search` | Re-search for missing episodes |

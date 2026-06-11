@@ -132,7 +132,12 @@ const ENV_META: EnvVarMeta[] = [
 
 const SetupUpdateSchema = z.object({
   key: z.string().describe("Environment variable name (e.g. PROXMOX_HOST)"),
-  value: z.string().describe("Value to set"),
+  value: z
+    .string()
+    .describe("Value to set")
+    .refine((v) => !/[\r\n]/.test(v), {
+      message: "Value must not contain newlines (would inject extra lines into .env)",
+    }),
 });
 
 export const SetupSchema = z.object({

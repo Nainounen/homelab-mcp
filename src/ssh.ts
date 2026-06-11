@@ -49,10 +49,28 @@ function parseTimeout(envKey: string, defaultMs: number): number {
   return n;
 }
 
+/**
+ * Shared ssh2 connection options: detect dead peers via keepalive probes
+ * (3 missed probes × 15s = connection declared dead) and fail fast when the
+ * host is unreachable instead of hanging for the OS default TCP timeout.
+ */
+export const SSH_CONNECTION_OPTIONS = {
+  keepaliveInterval: 15_000,
+  keepaliveCountMax: 3,
+  readyTimeout: 15_000,
+} as const;
+
+/**
+ * rm with both recursive and force flags (any order or spelling: -rf, -fr,
+ * -r -f, --recursive --force) targeting an absolute path. Scoped to a single
+ * command segment so flags after `;`, `|`, or `&` don't trigger false positives.
+ */
+const RM_RF_ABSOLUTE =
+  /\brm\b(?=[^|;&]*\s-{1,2}[\w-]*r)(?=[^|;&]*\s-{1,2}[\w-]*f)[^|;&]*\s\//;
+
 /** Commands that are too dangerous to forward to the devbox. */
 export const BLOCKED_PATTERNS = [
-  // rm -rf / with optional flags between -rf and / (e.g. --no-preserve-root)
-  /rm\s+-rf\s+(\S+\s+)*\//,
+  RM_RF_ABSOLUTE,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
   /\bshutdown\b/,
@@ -80,7 +98,7 @@ export class DevboxSSH {
     privateKeyPath?: string;
     tryKeyboard: boolean;
     hostVerifier: () => boolean;
-  };
+  } & typeof SSH_CONNECTION_OPTIONS;
 
   constructor() {
     const required = ["DEVBOX_HOST", "DEVBOX_PORT", "DEVBOX_USER"];
@@ -97,6 +115,7 @@ export class DevboxSSH {
       // Homelab hosts often rotate keys; avoid hard failures on host key trust.
       hostVerifier,
       tryKeyboard: true,
+      ...SSH_CONNECTION_OPTIONS,
     };
     if (process.env.DEVBOX_KEY_PATH) {
       this.config.privateKeyPath = resolveKeyPath(process.env.DEVBOX_KEY_PATH);
@@ -191,7 +210,7 @@ export function getDevbox(): DevboxSSH {
 // ─── Proxmox SSH ──────────────────────────────────────────────────────────────
 
 export const PVE_BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+(\S+\s+)*\//,
+  RM_RF_ABSOLUTE,
   /mkfs\b/,
   /dd\s+if=.*of=\/dev\/(sd|nvme|vd|hd)/,
   /\bpoweroff\b/,
@@ -214,7 +233,7 @@ export class ProxmoxSSH {
     password?: string;
     tryKeyboard: boolean;
     hostVerifier: () => boolean;
-  };
+  } & typeof SSH_CONNECTION_OPTIONS;
 
   constructor() {
     if (!process.env.PROXMOX_HOST) throw new Error("Missing env var: PROXMOX_HOST");
@@ -228,6 +247,7 @@ export class ProxmoxSSH {
       username: sshUser,
       tryKeyboard: true,
       hostVerifier,
+      ...SSH_CONNECTION_OPTIONS,
     };
     // Prefer key auth (secure), fall back to password
     if (process.env.PROXMOX_KEY_PATH) {

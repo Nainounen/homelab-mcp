@@ -63,7 +63,9 @@ export async function mediaDashboard(
       sonarr.get<{ records: Array<{ title: string; status: string; size: number; sizeleft: number; timeleft?: string }> }>("/queue"),
       radarr.get<Array<{ hasFile: boolean }>>("/movie"),
       sonarr.get<Array<{ statistics?: { episodeFileCount: number; episodeCount: number } }>>("/series"),
-      pveSSH.exec(`df -h ${shellEscape(disks)} 2>/dev/null | tail -n +2 | awk '{print $6": "$3"/"$2" used, "$4" free"}'`),
+      disks
+        ? pveSSH.exec(`df -h ${disks.split(/\s+/).map(shellEscape).join(" ")} 2>/dev/null | tail -n +2 | awk '{print $6": "$3"/"$2" used, "$4" free"}'`)
+        : Promise.resolve({ stdout: "", stderr: "", exitCode: 0 }),
       pveSSH.exec("nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null"),
       MEDIA_HEALTH_SCRIPT
         ? devbox.exec(`python3 - <<'PY'\n${MEDIA_HEALTH_SCRIPT}\nPY`)

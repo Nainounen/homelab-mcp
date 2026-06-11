@@ -1,6 +1,7 @@
 import { NodeSSH } from "node-ssh";
 import { homedir } from "os";
 import { resolve } from "path";
+import { SSH_CONNECTION_OPTIONS } from "./ssh.js";
 
 export interface ExecResult {
   stdout: string;
@@ -30,7 +31,7 @@ export class QnapSSH {
     password?: string;
     tryKeyboard: boolean;
     hostVerifier: () => boolean;
-  };
+  } & typeof SSH_CONNECTION_OPTIONS;
 
   constructor() {
     if (!process.env.QNAP_HOST) throw new Error("Missing env var: QNAP_HOST");
@@ -40,6 +41,7 @@ export class QnapSSH {
       username: process.env.QNAP_USER ?? "admin",
       tryKeyboard: true,
       hostVerifier,
+      ...SSH_CONNECTION_OPTIONS,
     };
     if (process.env.QNAP_KEY_PATH) {
       this.config.privateKeyPath = resolveKeyPath(process.env.QNAP_KEY_PATH);

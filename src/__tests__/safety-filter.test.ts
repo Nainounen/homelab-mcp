@@ -72,3 +72,32 @@ describe("devbox safety filter (BLOCKED_PATTERNS)", () => {
     expect(isBlocked("systemctl status sshd", PVE_BLOCKED_PATTERNS)).toBe(false);
   });
 });
+
+describe("hardened rm pattern (flag order and spelling variants)", () => {
+  const variants = [
+    "rm -fr /",
+    "rm -fr /data",
+    "rm -r -f /opt/projects",
+    "rm -f -r /var/lib",
+    "rm --recursive --force /",
+    "rm --force --recursive /home",
+    "rm -rfv /srv",
+  ];
+
+  for (const cmd of variants) {
+    it(`blocks "${cmd}"`, () => {
+      expect(isBlocked(cmd, BLOCKED_PATTERNS)).toBe(true);
+      expect(isBlocked(cmd, PVE_BLOCKED_PATTERNS)).toBe(true);
+    });
+  }
+
+  it("still allows rm without both flags or without absolute paths", () => {
+    expect(isBlocked("rm -rf build", BLOCKED_PATTERNS)).toBe(false);
+    expect(isBlocked("rm -f /var/log/app.log", BLOCKED_PATTERNS)).toBe(false);
+    expect(isBlocked("rm file.txt", BLOCKED_PATTERNS)).toBe(false);
+  });
+
+  it("does not false-positive on flags in a later command segment", () => {
+    expect(isBlocked("rm -f /tmp/x.lock; grep -r pattern /etc", BLOCKED_PATTERNS)).toBe(false);
+  });
+});

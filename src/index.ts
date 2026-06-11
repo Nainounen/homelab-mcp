@@ -23,7 +23,7 @@ import { createBazarrClient } from "./bazarr.js";
 import { createAdGuardClient } from "./adguard.js";
 import { createPbsClient } from "./pbs.js";
 import { buildModules, validateModules, HomelabClients } from "./modules/registry.js";
-import { sanitizeError, redactSecrets } from "./utils.js";
+import { sanitizeError, redactSecrets, truncateOutput } from "./utils.js";
 import { version } from "../package.json";
 
 // ─── Helper: try to create an optional client, skip with a warning if env vars missing ──
@@ -36,6 +36,12 @@ function tryCreate<T>(name: string, factory: () => T): T | undefined {
     process.stderr.write(`[homelab-mcp] skipping ${name}: ${msg}\n`);
     return undefined;
   }
+}
+
+function requireEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) throw new Error(`Missing ${key}`);
+  return value;
 }
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
@@ -60,14 +66,8 @@ const clients: HomelabClients = {
   bazarr:   tryCreate("Bazarr",       createBazarrClient),
   adguard:  tryCreate("AdGuard",      createAdGuardClient),
   pbs:      tryCreate("PBS",          createPbsClient),
-  lidarr:   tryCreate("Lidarr",       () => createArrV1Client(
-    process.env.LIDARR_URL  ?? (() => { throw new Error("Missing LIDARR_URL") })(),
-    process.env.LIDARR_API_KEY ?? (() => { throw new Error("Missing LIDARR_API_KEY") })(),
-  )),
-  readarr:  tryCreate("Readarr",      () => createArrV1Client(
-    process.env.READARR_URL  ?? (() => { throw new Error("Missing READARR_URL") })(),
-    process.env.READARR_API_KEY ?? (() => { throw new Error("Missing READARR_API_KEY") })(),
-  )),
+  lidarr:   tryCreate("Lidarr",       () => createArrV1Client(requireEnv("LIDARR_URL"), requireEnv("LIDARR_API_KEY"))),
+  readarr:  tryCreate("Readarr",      () => createArrV1Client(requireEnv("READARR_URL"), requireEnv("READARR_API_KEY"))),
 };
 
 // ─── Modules ──────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       };
     }
     const result = await handler(args);
-    if (result !== null) return { content: [{ type: "text", text: redactSecrets(result) }] };
+    if (result !== null) return { content: [{ type: "text", text: truncateOutput(redactSecrets(result)) }] };
     return {
       content: [{ type: "text", text: `Unknown tool: ${name}` }],
       isError: true,

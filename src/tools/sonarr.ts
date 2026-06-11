@@ -54,7 +54,23 @@ export const SonarrForceSearchSchema = z.object({
   tvdb_id: z.number().describe("TVDB ID of the series to search for"),
 });
 
+export const SonarrListSeriesSchema = z.object({
+  filter: z
+    .enum(["all", "missing", "complete", "unmonitored"])
+    .optional()
+    .default("all")
+    .describe("Filter: 'missing' = has missing episodes, 'complete' = all episodes downloaded, 'unmonitored' (default: all)"),
+  search: z.string().optional().describe("Only show titles containing this text (case-insensitive)"),
+  limit: z.number().int().positive().optional().default(100).describe("Max titles to return (default 100)"),
+});
+
 // ─── Implementations ──────────────────────────────────────────────────────────
+
+/** Look up a library series by TVDB ID using Sonarr's server-side filter (avoids fetching the whole library). */
+async function getSeriesByTvdbId(client: ArrClient, tvdbId: number): Promise<SonarrSeries | undefined> {
+  const matches = await client.get<SonarrSeries[]>("/series", { tvdbId });
+  return matches[0];
+}
 
 export async function sonarrSearchSeries(
   client: ArrClient,
@@ -85,8 +101,7 @@ export async function sonarrAddSeries(
     tvdbId = results[0].tvdbId;
   }
 
-  const existing = await client.get<SonarrSeries[]>("/series");
-  const already = existing.find((s) => s.tvdbId === tvdbId);
+  const already = await getSeriesByTvdbId(client, tvdbId);
   if (already) {
     const pct = already.statistics?.percentOfEpisodes?.toFixed(0) ?? "?";
     return `"${already.title}" is already in your Sonarr library (${pct}% episodes downloaded).`;
@@ -127,26 +142,48 @@ export async function sonarrAddSeries(
   return `Added "${series.title}" (${series.year}) to Sonarr — searching for episodes now.`;
 }
 
-export async function sonarrListSeries(client: ArrClient): Promise<string> {
+export async function sonarrListSeries(
+  client: ArrClient,
+  input: z.infer<typeof SonarrListSeriesSchema>
+): Promise<string> {
   const series = await client.get<SonarrSeries[]>("/series");
   if (!series.length) return "No series in library yet.";
-  const sorted = [...series].sort((a, b) => a.title.localeCompare(b.title));
-  return sorted
-    .map((s) => {
-      const eps = s.statistics
-        ? `${s.statistics.episodeFileCount}/${s.statistics.episodeCount} eps | ${bytes(s.statistics.sizeOnDisk)}`
-        : s.status;
-      return `[${s.tvdbId}] ${s.title} (${s.year}) — ${eps}`;
-    })
-    .join("\n");
+
+  let filtered = series;
+  if (input.filter === "missing") {
+    filtered = series.filter((s) => s.monitored && (s.statistics?.episodeFileCount ?? 0) < (s.statistics?.episodeCount ?? 0));
+  } else if (input.filter === "complete") {
+    filtered = series.filter((s) => (s.statistics?.episodeCount ?? 0) > 0 && s.statistics?.episodeFileCount === s.statistics?.episodeCount);
+  } else if (input.filter === "unmonitored") {
+    filtered = series.filter((s) => !s.monitored);
+  }
+  if (input.search) {
+    const needle = input.search.toLowerCase();
+    filtered = filtered.filter((s) => s.title.toLowerCase().includes(needle));
+  }
+  if (!filtered.length) return `No series match (library has ${series.length} total).`;
+
+  const sorted = [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+  const shown = sorted.slice(0, input.limit);
+  const lines = shown.map((s) => {
+    const eps = s.statistics
+      ? `${s.statistics.episodeFileCount}/${s.statistics.episodeCount} eps | ${bytes(s.statistics.sizeOnDisk)}`
+      : s.status;
+    return `[${s.tvdbId}] ${s.title} (${s.year}) — ${eps}`;
+  });
+
+  const header =
+    shown.length < sorted.length
+      ? `Showing ${shown.length} of ${sorted.length} matching series (${series.length} in library) — use filter/search/limit to narrow.\n`
+      : `${sorted.length} series (${series.length} in library):\n`;
+  return header + lines.join("\n");
 }
 
 export async function sonarrRemoveSeries(
   client: ArrClient,
   input: z.infer<typeof SonarrRemoveSeriesSchema>
 ): Promise<string> {
-  const series = await client.get<SonarrSeries[]>("/series");
-  const s = series.find((x) => x.tvdbId === input.tvdb_id);
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
   if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
   await client.delete(`/series/${s.id}`, { deleteFiles: input.delete_files });
   return `Removed "${s.title}" from Sonarr${input.delete_files ? " (files deleted)" : ""}.`;
@@ -168,8 +205,7 @@ export async function sonarrForceSearch(
   client: ArrClient,
   input: z.infer<typeof SonarrForceSearchSchema>
 ): Promise<string> {
-  const series = await client.get<SonarrSeries[]>("/series");
-  const s = series.find((x) => x.tvdbId === input.tvdb_id);
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
   if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
   await client.post("/command", { name: "SeriesSearch", seriesId: s.id });
   return `Triggered search for all missing episodes of "${s.title}".`;
@@ -202,8 +238,7 @@ export async function sonarrSeasonSearch(
   client: ArrClient,
   input: z.infer<typeof SonarrSeasonSearchSchema>
 ): Promise<string> {
-  const series = await client.get<SonarrSeries[]>("/series");
-  const s = series.find((x) => x.tvdbId === input.tvdb_id);
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
   if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
   await client.post("/command", { name: "SeasonSearch", seriesId: s.id, seasonNumber: input.season });
   return `Triggered search for "${s.title}" Season ${input.season}.`;
@@ -278,8 +313,7 @@ export async function sonarrCheckReleases(
   client: ArrClient,
   input: z.infer<typeof SonarrCheckReleasesSchema>
 ): Promise<string> {
-  const seriesList = await client.get<SonarrSeries[]>("/series");
-  const s = seriesList.find((x) => x.tvdbId === input.tvdb_id);
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
   if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
 
   const seasonNum = input.season ?? 1;

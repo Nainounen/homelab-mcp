@@ -1,8 +1,10 @@
 import axios, { AxiosInstance } from "axios";
 import http from "http";
+import https from "https";
 import { withRetry } from "./utils.js";
 
 const keepAliveAgent = new http.Agent({ keepAlive: true });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
 
 export class ArrClient {
   private http: AxiosInstance;
@@ -12,6 +14,7 @@ export class ArrClient {
       baseURL: `${baseUrl}/${apiPath}`,
       headers: { "X-Api-Key": apiKey },
       httpAgent: keepAliveAgent,
+      httpsAgent: keepAliveHttpsAgent,
       timeout: 45_000,
     });
   }

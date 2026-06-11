@@ -147,6 +147,25 @@ export function redactSecrets(output: string): string {
   return result;
 }
 
+// ─── Output size cap — keep tool results from flooding the AI context ─────────
+
+/** Default max characters per tool result (~7,500 tokens). */
+const DEFAULT_MAX_OUTPUT_CHARS = 30_000;
+
+/**
+ * Truncate oversized tool output, keeping the head (where summaries and
+ * headers live) and noting how much was cut. Override the limit with
+ * MAX_OUTPUT_CHARS in .env; set it to 0 to disable truncation.
+ */
+export function truncateOutput(output: string): string {
+  const raw = process.env.MAX_OUTPUT_CHARS;
+  const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
+  const max = !isNaN(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_OUTPUT_CHARS;
+  if (max === 0 || output.length <= max) return output;
+  const omitted = output.length - max;
+  return `${output.slice(0, max)}\n\n[output truncated — ${omitted} characters omitted; narrow the query or raise MAX_OUTPUT_CHARS to see more]`;
+}
+
 // ─── TTL cache for expensive / static tool results ────────────────────────────
 
 interface CacheEntry<T> {

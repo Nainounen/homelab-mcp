@@ -2,6 +2,27 @@
 
 All notable changes to the homelab-mcp server.
 
+## [2.4.0] — 2026-06-11
+
+### Security
+- **Shell injection fixed in `devbox_git` clone**: the target directory was interpolated inside double quotes, so a `repo_dir` containing `$(…)` executed on the devbox — now passed through `shellEscape` like every other argument
+- **Safety filter hardened**: `rm` with recursive+force flags in any order or spelling (`-fr`, `-r -f`, `--recursive --force`, `-rfv`) targeting an absolute path is now blocked on both devbox and Proxmox (was: only literal `-rf`)
+- **`.env` injection fixed in setup wizard**: `configure` values containing newlines could append arbitrary extra lines to `.env` — now rejected by schema validation
+
+### Added
+- **Output size cap**: every tool result is truncated at `MAX_OUTPUT_CHARS` (default 30,000 chars ≈ 7,500 tokens, `0` disables) so a stray `cat` of a huge file can't flood the AI context
+- **Library list filters**: `radarr_list_movies` and `sonarr_list_series` accept `filter` (missing/downloaded-or-complete/unmonitored), `search`, and `limit` (default 100) — large libraries no longer dump thousands of lines per call
+
+### Fixed
+- **`homelab_health` false negatives**: Proxmox/Devbox/QNAP entries are bare hosts, not URLs, so their HTTP pings always failed — Proxmox is now probed at `https://HOST:PORT`, Devbox/QNAP via TCP on their SSH ports; services answering 401/403/404 now count as reachable; self-signed HTTPS no longer fails the reachability probe
+- **`media_dashboard` storage section**: multiple `DASHBOARD_DISK_PATHS` were quoted as a single `df` argument and silently produced no output — each path is now escaped individually
+
+### Performance
+- **SSH keepalive + fast-fail connect** on devbox, Proxmox, and QNAP connections (`keepaliveInterval` 15s ×3, `readyTimeout` 15s) — dead peers are detected instead of hanging until command timeout
+- **Server-side lookups**: Radarr/Sonarr single-item operations (add/remove/force-search/season-search/check-releases) query by `tmdbId`/`tvdbId` instead of fetching the entire library each call
+- **`devbox_project_list`**: probes all projects in parallel with one combined SSH command each (was: two sequential round trips per project)
+- **`ArrClient`**: HTTPS keep-alive agent added (HTTP-only before)
+
 ## [2.3.0] — 2026-06-09
 
 ### Security

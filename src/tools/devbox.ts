@@ -244,7 +244,7 @@ export async function devboxGit(
       if (parent) {
         await ssh.exec(`mkdir -p ${shellEscape(parent)}`);
       }
-      cmd = `git clone -b ${shellEscape(branch)} ${shellEscape(url)} "${dir}"`;
+      cmd = `git clone -b ${shellEscape(branch)} ${shellEscape(url)} ${shellEscape(dir)}`;
       cwd = undefined; // clone runs from any directory
       break;
     }
@@ -351,26 +351,30 @@ export async function devboxProjectList(
 
   const lines: string[] = [`Projects under ${input.base_path}:\n`];
 
-  for (const file of composeFiles) {
-    const dir = file.substring(0, file.lastIndexOf("/"));
-    const name = dir.split("/").pop() || dir;
+  // One combined command per project, all projects probed in parallel —
+  // halves the SSH round trips and removes the serial per-project wait.
+  const results = await Promise.all(
+    composeFiles.map(async (file) => {
+      const dir = file.substring(0, file.lastIndexOf("/"));
+      const name = dir.split("/").pop() || dir;
+      const probe = await ssh.exec(
+        `cd ${shellEscape(dir)} 2>/dev/null && { git remote get-url origin 2>/dev/null || echo "(no git)"; echo "---"; docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null; }`
+      );
+      const [gitPart = "", psPart = ""] = probe.stdout.split("\n---\n");
+      return {
+        name,
+        dir,
+        remote: gitPart.trim() || "(no git remote)",
+        status: psPart.trim() || "(no containers)",
+      };
+    })
+  );
 
-    // Git remote
-    const git = await ssh.exec(
-      `cd ${shellEscape(dir)} 2>/dev/null && git remote get-url origin 2>/dev/null || echo "(no git)"`
-    );
-    const remote = git.stdout.trim() || "(no git remote)";
-
-    // Container status
-    const ps = await ssh.exec(
-      `cd ${shellEscape(dir)} && docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null`
-    );
-    const status = ps.stdout?.trim() || "(no containers)";
-
-    lines.push(`### ${name}`);
-    lines.push(`Path: ${dir}`);
-    lines.push(`Git: ${remote}`);
-    lines.push(`${status}\n`);
+  for (const r of results) {
+    lines.push(`### ${r.name}`);
+    lines.push(`Path: ${r.dir}`);
+    lines.push(`Git: ${r.remote}`);
+    lines.push(`${r.status}\n`);
   }
 
   return lines.join("\n");

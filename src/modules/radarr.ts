@@ -29,8 +29,16 @@ export function radarrModule(client: ArrClient): ToolModule {
       },
       {
         name: "radarr_list_movies",
-        description: "List all movies in the Radarr library with their download status and file size.",
-        inputSchema: { type: "object", properties: {}, required: [] },
+        description: "List movies in the Radarr library with download status and file size. Supports filtering and search to keep output small.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            filter: { type: "string", enum: ["all", "missing", "downloaded", "unmonitored"], description: "Filter by status (default: all)" },
+            search: { type: "string", description: "Only show titles containing this text" },
+            limit: { type: "number", description: "Max titles to return (default 100)" },
+          },
+          required: [],
+        },
       },
       {
         name: "radarr_remove_movie",
@@ -118,7 +126,7 @@ export function radarrModule(client: ArrClient): ToolModule {
       switch (name) {
         case "radarr_search_movie":      return impl.radarrSearchMovie(client, impl.RadarrSearchSchema.parse(args));
         case "radarr_add_movie":         return impl.radarrAddMovie(client, impl.RadarrAddMovieSchema.parse(args));
-        case "radarr_list_movies":       return impl.radarrListMovies(client);
+        case "radarr_list_movies":       return impl.radarrListMovies(client, impl.RadarrListMoviesSchema.parse(args));
         case "radarr_remove_movie":      return impl.radarrRemoveMovie(client, impl.RadarrRemoveMovieSchema.parse(args));
         case "radarr_get_queue":         return impl.radarrGetQueue(client);
         case "radarr_force_search":      return impl.radarrForceSearch(client, impl.RadarrForceSearchSchema.parse(args));

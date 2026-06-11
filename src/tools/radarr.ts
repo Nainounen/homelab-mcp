@@ -54,7 +54,23 @@ export const RadarrForceSearchSchema = z.object({
   tmdb_id: z.number().describe("TMDB ID of the movie to search for"),
 });
 
+export const RadarrListMoviesSchema = z.object({
+  filter: z
+    .enum(["all", "missing", "downloaded", "unmonitored"])
+    .optional()
+    .default("all")
+    .describe("Filter: 'missing' = monitored but no file, 'downloaded' = has file, 'unmonitored' (default: all)"),
+  search: z.string().optional().describe("Only show titles containing this text (case-insensitive)"),
+  limit: z.number().int().positive().optional().default(100).describe("Max titles to return (default 100)"),
+});
+
 // ─── Implementations ──────────────────────────────────────────────────────────
+
+/** Look up a library movie by TMDB ID using Radarr's server-side filter (avoids fetching the whole library). */
+async function getMovieByTmdbId(client: ArrClient, tmdbId: number): Promise<RadarrMovie | undefined> {
+  const matches = await client.get<RadarrMovie[]>("/movie", { tmdbId });
+  return matches[0];
+}
 
 export async function radarrSearchMovie(
   client: ArrClient,
@@ -86,8 +102,7 @@ export async function radarrAddMovie(
   }
 
   // Check if already in library
-  const existing = await client.get<RadarrMovie[]>("/movie");
-  const already = existing.find((m) => m.tmdbId === tmdbId);
+  const already = await getMovieByTmdbId(client, tmdbId);
   if (already) return `"${already.title}" is already in your Radarr library (${already.hasFile ? "downloaded" : "not yet downloaded"}).`;
 
   // Get quality profile
@@ -124,24 +139,42 @@ export async function radarrAddMovie(
   return `Added "${movie.title}" (${movie.year}) to Radarr — searching for a download now.`;
 }
 
-export async function radarrListMovies(client: ArrClient): Promise<string> {
+export async function radarrListMovies(
+  client: ArrClient,
+  input: z.infer<typeof RadarrListMoviesSchema>
+): Promise<string> {
   const movies = await client.get<RadarrMovie[]>("/movie");
   if (!movies.length) return "No movies in library yet.";
-  const sorted = [...movies].sort((a, b) => a.title.localeCompare(b.title));
-  return sorted
-    .map((m) => {
-      const status = m.hasFile ? `✓ ${bytes(m.sizeOnDisk)}` : m.monitored ? "⬇ missing" : "○ unmonitored";
-      return `[${m.tmdbId}] ${m.title} (${m.year}) — ${status}`;
-    })
-    .join("\n");
+
+  let filtered = movies;
+  if (input.filter === "missing") filtered = movies.filter((m) => m.monitored && !m.hasFile);
+  else if (input.filter === "downloaded") filtered = movies.filter((m) => m.hasFile);
+  else if (input.filter === "unmonitored") filtered = movies.filter((m) => !m.monitored);
+  if (input.search) {
+    const needle = input.search.toLowerCase();
+    filtered = filtered.filter((m) => m.title.toLowerCase().includes(needle));
+  }
+  if (!filtered.length) return `No movies match (library has ${movies.length} total).`;
+
+  const sorted = [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+  const shown = sorted.slice(0, input.limit);
+  const lines = shown.map((m) => {
+    const status = m.hasFile ? `✓ ${bytes(m.sizeOnDisk)}` : m.monitored ? "⬇ missing" : "○ unmonitored";
+    return `[${m.tmdbId}] ${m.title} (${m.year}) — ${status}`;
+  });
+
+  const header =
+    shown.length < sorted.length
+      ? `Showing ${shown.length} of ${sorted.length} matching movies (${movies.length} in library) — use filter/search/limit to narrow.\n`
+      : `${sorted.length} movie(s) (${movies.length} in library):\n`;
+  return header + lines.join("\n");
 }
 
 export async function radarrRemoveMovie(
   client: ArrClient,
   input: z.infer<typeof RadarrRemoveMovieSchema>
 ): Promise<string> {
-  const movies = await client.get<RadarrMovie[]>("/movie");
-  const movie = movies.find((m) => m.tmdbId === input.tmdb_id);
+  const movie = await getMovieByTmdbId(client, input.tmdb_id);
   if (!movie) throw new Error(`No movie with tmdbId ${input.tmdb_id} in library`);
   await client.delete(`/movie/${movie.id}`, { deleteFiles: input.delete_files });
   return `Removed "${movie.title}" from Radarr${input.delete_files ? " (files deleted)" : ""}.`;
@@ -164,8 +197,7 @@ export async function radarrForceSearch(
   client: ArrClient,
   input: z.infer<typeof RadarrForceSearchSchema>
 ): Promise<string> {
-  const movies = await client.get<RadarrMovie[]>("/movie");
-  const movie = movies.find((m) => m.tmdbId === input.tmdb_id);
+  const movie = await getMovieByTmdbId(client, input.tmdb_id);
   if (!movie) throw new Error(`No movie with tmdbId ${input.tmdb_id} in library`);
 
   await client.post("/command", { name: "MoviesSearch", movieIds: [movie.id] });
@@ -276,8 +308,7 @@ export async function radarrCheckReleases(
   client: ArrClient,
   input: z.infer<typeof RadarrCheckReleasesSchema>
 ): Promise<string> {
-  const movies = await client.get<RadarrMovie[]>("/movie");
-  const movie = movies.find((m) => m.tmdbId === input.tmdb_id);
+  const movie = await getMovieByTmdbId(client, input.tmdb_id);
   if (!movie) throw new Error(`No movie with tmdbId ${input.tmdb_id} in library`);
 
   const releases = await client.get<Array<{ title: string; rejections: string[]; indexer?: string; size?: number; quality?: { quality?: { name: string } } }>>(`/release?movieId=${movie.id}`);

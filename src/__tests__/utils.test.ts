@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bytes, speed } from "../utils.js";
+import { bytes, speed, truncateOutput } from "../utils.js";
 
 describe("bytes", () => {
   it("formats bytes", () => {
@@ -45,5 +45,38 @@ describe("speed", () => {
 
   it("handles small values", () => {
     expect(speed(1)).toBe("0 KB/s");
+  });
+});
+
+describe("truncateOutput", () => {
+  it("returns short output unchanged", () => {
+    expect(truncateOutput("hello")).toBe("hello");
+  });
+
+  it("truncates output beyond the default limit and notes the omission", () => {
+    const big = "x".repeat(40_000);
+    const result = truncateOutput(big);
+    expect(result.length).toBeLessThan(big.length);
+    expect(result).toContain("[output truncated — 10000 characters omitted");
+  });
+
+  it("respects MAX_OUTPUT_CHARS override", () => {
+    process.env.MAX_OUTPUT_CHARS = "10";
+    try {
+      expect(truncateOutput("abcdefghijKLM")).toContain("abcdefghij");
+      expect(truncateOutput("abcdefghijKLM")).toContain("truncated");
+    } finally {
+      delete process.env.MAX_OUTPUT_CHARS;
+    }
+  });
+
+  it("disables truncation when MAX_OUTPUT_CHARS=0", () => {
+    process.env.MAX_OUTPUT_CHARS = "0";
+    try {
+      const big = "x".repeat(40_000);
+      expect(truncateOutput(big)).toBe(big);
+    } finally {
+      delete process.env.MAX_OUTPUT_CHARS;
+    }
   });
 });

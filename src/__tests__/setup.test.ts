@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { homelabSetup } from "../tools/setup.js";
+import { homelabSetup, SetupSchema } from "../tools/setup.js";
 
 /**
  * Setup wizard tests.
@@ -178,5 +178,25 @@ describe("homelabSetup — test", () => {
   it("reports when no services are configured", async () => {
     const result = await homelabSetup({ action: "test", updates: [] });
     expect(result).toContain("No services configured yet");
+  });
+});
+
+describe("SetupSchema — value validation", () => {
+  it("rejects values containing newlines (.env injection)", () => {
+    expect(() =>
+      SetupSchema.parse({
+        action: "configure",
+        updates: [{ key: "PROXMOX_HOST", value: "1.2.3.4\nEVIL_KEY=oops" }],
+      })
+    ).toThrow();
+  });
+
+  it("accepts normal values", () => {
+    expect(() =>
+      SetupSchema.parse({
+        action: "configure",
+        updates: [{ key: "PROXMOX_HOST", value: "192.168.1.10" }],
+      })
+    ).not.toThrow();
   });
 });
