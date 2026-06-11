@@ -274,6 +274,139 @@ export async function sonarrSetPathMapping(
   return `Added path mapping: ${input.host}: ${input.remote_path} → ${input.local_path}`;
 }
 
+// ─── Custom formats ───────────────────────────────────────────────────────────
+
+interface CustomFormat {
+  id: number;
+  name: string;
+  includeCustomFormatWhenRenaming: boolean;
+  specifications: unknown[];
+}
+
+interface QualityProfileFull extends QualityProfile {
+  formatItems?: Array<{ format: number; name: string; score: number }>;
+}
+
+export const CustomFormatSetSchema = z.object({
+  name: z.string().describe("Custom format name (creates or updates by name)"),
+  specifications: z
+    .string()
+    .optional()
+    .describe(
+      'JSON array of specification objects. Each spec needs at minimum: { "name": "...", "implementationName": "...", "implementation": "...", "negate": false, "required": false, "fields": [...] }. Omit to create a format with no conditions (score-only).'
+    ),
+  include_when_renaming: z.boolean().optional().default(false).describe("Include format tag in renamed files (default false)"),
+});
+
+export const CustomFormatDeleteSchema = z.object({
+  name: z.string().describe("Name of the custom format to delete"),
+});
+
+export const CustomFormatScoreSchema = z.object({
+  format_name: z.string().describe("Custom format name"),
+  profile_name: z.string().optional().describe("Quality profile name (default: first available)"),
+  score: z.number().int().describe("Score to assign (positive = prefer, negative = reject, 0 = ignore)"),
+});
+
+export async function sonarrListCustomFormats(client: ArrClient): Promise<string> {
+  const [formats, profiles] = await Promise.all([
+    client.get<CustomFormat[]>("/customformat"),
+    client.get<QualityProfileFull[]>("/qualityprofile"),
+  ]);
+
+  if (!formats.length) return "No custom formats configured in Sonarr.";
+
+  const scoreMap = new Map<number, Map<string, number>>();
+  for (const p of profiles) {
+    for (const fi of p.formatItems ?? []) {
+      if (!scoreMap.has(fi.format)) scoreMap.set(fi.format, new Map());
+      scoreMap.get(fi.format)!.set(p.name, fi.score);
+    }
+  }
+
+  return formats
+    .map((f) => {
+      const scores = scoreMap.get(f.id);
+      const scoreStr = scores && scores.size
+        ? Array.from(scores.entries())
+            .filter(([, s]) => s !== 0)
+            .map(([p, s]) => `${p}: ${s > 0 ? "+" : ""}${s}`)
+            .join(", ")
+        : "no score";
+      const specs = f.specifications.length;
+      return `[${f.id}] ${f.name} | ${specs} condition(s) | ${scoreStr}`;
+    })
+    .join("\n");
+}
+
+export async function sonarrSetCustomFormat(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatSetSchema>
+): Promise<string> {
+  const specs = input.specifications ? JSON.parse(input.specifications) : [];
+  const existing = await client.get<CustomFormat[]>("/customformat");
+  const match = existing.find((f) => f.name.toLowerCase() === input.name.toLowerCase());
+
+  const payload = {
+    name: input.name,
+    includeCustomFormatWhenRenaming: input.include_when_renaming ?? false,
+    specifications: specs,
+  };
+
+  if (match) {
+    await client.put<CustomFormat>(`/customformat/${match.id}`, { ...payload, id: match.id });
+    return `Updated custom format "${input.name}" (id: ${match.id}).`;
+  }
+
+  const created = await client.post<CustomFormat>("/customformat", payload);
+  return `Created custom format "${input.name}" (id: ${created.id}).`;
+}
+
+export async function sonarrDeleteCustomFormat(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatDeleteSchema>
+): Promise<string> {
+  const existing = await client.get<CustomFormat[]>("/customformat");
+  const match = existing.find((f) => f.name.toLowerCase() === input.name.toLowerCase());
+  if (!match) throw new Error(`Custom format "${input.name}" not found`);
+  await client.delete(`/customformat/${match.id}`);
+  return `Deleted custom format "${input.name}".`;
+}
+
+export async function sonarrSetCfScore(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatScoreSchema>
+): Promise<string> {
+  const [formats, profiles] = await Promise.all([
+    client.get<CustomFormat[]>("/customformat"),
+    client.get<QualityProfileFull[]>("/qualityprofile"),
+  ]);
+
+  const format = formats.find((f) => f.name.toLowerCase() === input.format_name.toLowerCase());
+  if (!format) throw new Error(`Custom format "${input.format_name}" not found`);
+
+  let profile: QualityProfileFull;
+  if (input.profile_name) {
+    const p = profiles.find((p) => p.name.toLowerCase() === input.profile_name!.toLowerCase());
+    if (!p) throw new Error(`Quality profile "${input.profile_name}" not found. Available: ${profiles.map((p) => p.name).join(", ")}`);
+    profile = p;
+  } else {
+    profile = profiles[0];
+    if (!profile) throw new Error("No quality profiles found in Sonarr");
+  }
+
+  const formatItems = (profile.formatItems ?? []).map((fi) =>
+    fi.format === format.id ? { ...fi, score: input.score } : fi
+  );
+
+  if (!formatItems.find((fi) => fi.format === format.id)) {
+    formatItems.push({ format: format.id, name: format.name, score: input.score });
+  }
+
+  await client.put(`/qualityprofile/${profile.id}`, { ...profile, formatItems });
+  return `Set score ${input.score > 0 ? "+" : ""}${input.score} for "${format.name}" in profile "${profile.name}".`;
+}
+
 // ─── Blocklist release ────────────────────────────────────────────────────────
 
 export const SonarrBlocklistReleaseSchema = z.object({
@@ -348,5 +481,191 @@ export async function sonarrCheckReleases(
     });
   }
 
+  return lines.join("\n");
+}
+
+// ─── Interactive search & grab ────────────────────────────────────────────────
+
+interface Release {
+  guid: string;
+  indexerId: number;
+  indexer?: string;
+  title: string;
+  size: number;
+  age: number;
+  seeders?: number;
+  rejections: string[];
+  quality?: { quality?: { name: string } };
+  customFormatScore?: number;
+  downloadAllowed?: boolean;
+  fullSeason?: boolean;
+}
+
+export const SonarrInteractiveSearchSchema = z.object({
+  tvdb_id: z.number().describe("TVDB ID of the series"),
+  season: z.number().describe("Season number to search"),
+  episode: z.number().optional().describe("Episode number — omit to show season-pack and first-episode releases"),
+  include_rejected: z.boolean().optional().default(false).describe("Also show rejected releases (default: false)"),
+});
+
+export const SonarrGrabReleaseSchema = z.object({
+  tvdb_id: z.number().describe("TVDB ID of the series (same as used in sonarr_interactive_search)"),
+  guid: z.string().describe("Release GUID from sonarr_interactive_search output"),
+  season: z.number().describe("Season number — must match what was used in sonarr_interactive_search"),
+  episode: z.number().optional().describe("Episode number — must match if sonarr_interactive_search was called with one"),
+});
+
+export async function sonarrInteractiveSearch(
+  client: ArrClient,
+  input: z.infer<typeof SonarrInteractiveSearchSchema>
+): Promise<string> {
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
+
+  const episodes = await client.get<Array<{ id: number; seasonNumber: number; episodeNumber: number }>>(
+    `/episode?seriesId=${s.id}&seasonNumber=${input.season}`
+  );
+  if (!episodes.length) return `No episodes found for S${String(input.season).padStart(2, "0")}.`;
+
+  const ep = input.episode
+    ? episodes.find((e) => e.episodeNumber === input.episode)
+    : episodes[0];
+  if (!ep) throw new Error(`Episode ${input.episode} not found in S${String(input.season).padStart(2, "0")}`);
+
+  const releases = await client.get<Release[]>(`/release?episodeId=${ep.id}`);
+  const relevant = releases.filter((r) => !r.rejections?.some((x) => x.includes("Unknown Series")));
+
+  const grabbable = relevant.filter((r) => !r.rejections?.length);
+  const rejected = relevant.filter((r) => r.rejections?.length);
+  const shown = input.include_rejected ? relevant : grabbable;
+
+  if (!shown.length) {
+    return `No grabbable releases for "${s.title}" S${String(input.season).padStart(2, "0")} (${rejected.length} rejected). Pass include_rejected: true to see why.`;
+  }
+
+  const epLabel = input.episode
+    ? `S${String(input.season).padStart(2, "0")}E${String(input.episode).padStart(2, "0")}`
+    : `S${String(input.season).padStart(2, "0")}`;
+
+  const lines: string[] = [
+    `Interactive search for "${s.title}" ${epLabel} — ${grabbable.length} grabbable, ${rejected.length} rejected:\n`,
+    "Pass the guid to sonarr_grab_release to download a specific release.\n",
+  ];
+
+  shown.forEach((r, i) => {
+    const q = r.quality?.quality?.name ?? "?";
+    const size = bytes(r.size);
+    const age = `${r.age}d`;
+    const score = r.customFormatScore !== undefined ? ` | CF score: ${r.customFormatScore > 0 ? "+" : ""}${r.customFormatScore}` : "";
+    const pack = r.fullSeason ? " [SEASON PACK]" : "";
+    const status = r.rejections?.length ? ` ✗ REJECTED: ${r.rejections[0]}` : " ✓";
+    lines.push(`[${i + 1}] guid:${r.guid}`);
+    lines.push(`     ${r.title}${pack}`);
+    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId}${score}${status}`);
+  });
+
+  return lines.join("\n");
+}
+
+export async function sonarrGrabRelease(
+  client: ArrClient,
+  input: z.infer<typeof SonarrGrabReleaseSchema>
+): Promise<string> {
+  const s = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!s) throw new Error(`No series with tvdbId ${input.tvdb_id} in library`);
+
+  const episodes = await client.get<Array<{ id: number; seasonNumber: number; episodeNumber: number }>>(
+    `/episode?seriesId=${s.id}&seasonNumber=${input.season}`
+  );
+  const ep = input.episode
+    ? episodes.find((e) => e.episodeNumber === input.episode)
+    : episodes[0];
+  if (!ep) throw new Error(`Episode not found in S${String(input.season).padStart(2, "0")}`);
+
+  const releases = await client.get<Release[]>(`/release?episodeId=${ep.id}`);
+  const release = releases.find((r) => r.guid === input.guid);
+  if (!release) throw new Error(`Release with guid "${input.guid}" not found. Re-run sonarr_interactive_search to get fresh GUIDs.`);
+
+  await client.post("/release", release);
+  const q = release.quality?.quality?.name ?? "?";
+  return `Grabbing "${release.title}" [${q}] — check sonarr_get_queue to monitor progress.`;
+}
+
+// ─── Manual import ────────────────────────────────────────────────────────────
+
+interface SonarrManualImportItem {
+  path: string;
+  name: string;
+  size: number;
+  quality?: { quality?: { name: string } };
+  series?: { id: number; title: string };
+  seasonNumber?: number;
+  episodes?: Array<{ id: number; episodeNumber: number; title: string }>;
+  rejections?: Array<{ reason: string }>;
+  releaseGroup?: string;
+  languages?: Array<{ id: number; name: string }>;
+}
+
+export const SonarrManualImportSchema = z.object({
+  folder: z.string().describe("Absolute path of the folder to scan for importable files"),
+  preview_only: z.boolean().optional().default(false).describe("When true, show matches without importing (default false — applies the import)"),
+  filter_existing: z.boolean().optional().default(true).describe("Skip files already in the library (default true)"),
+});
+
+export async function sonarrManualImport(
+  client: ArrClient,
+  input: z.infer<typeof SonarrManualImportSchema>
+): Promise<string> {
+  const items = await client.get<SonarrManualImportItem[]>("/manualimport", {
+    folder: input.folder,
+    filterExistingFiles: input.filter_existing,
+  });
+
+  if (!items.length) return `No importable files found in "${input.folder}".`;
+
+  const matched = items.filter((i) => i.series?.id && i.episodes?.length && !i.rejections?.length);
+  const unmatched = items.filter((i) => !i.series?.id || !i.episodes?.length || i.rejections?.length);
+
+  const lines: string[] = [`Manual import scan of "${input.folder}" — ${items.length} file(s):\n`];
+
+  if (matched.length) {
+    lines.push(`READY TO IMPORT (${matched.length}):`);
+    matched.forEach((i) => {
+      const q = i.quality?.quality?.name ?? "?";
+      const epLabel = i.episodes?.map((e) => `E${String(e.episodeNumber).padStart(2, "0")}`).join("+") ?? "?";
+      lines.push(`  ✓ ${i.series!.title} S${String(i.seasonNumber ?? 0).padStart(2, "0")}${epLabel} | ${q} | ${bytes(i.size)}`);
+      lines.push(`      ${i.path}`);
+    });
+  }
+
+  if (unmatched.length) {
+    lines.push(`\nNEEDS ATTENTION (${unmatched.length}):`);
+    unmatched.forEach((i) => {
+      const reason = i.rejections?.map((r) => r.reason).join("; ") ?? "no series/episode match";
+      lines.push(`  ✗ ${i.name} — ${reason}`);
+      lines.push(`      ${i.path}`);
+    });
+  }
+
+  if (input.preview_only) {
+    lines.push("\n(Preview only — pass preview_only: false to apply the import.)");
+    return lines.join("\n");
+  }
+
+  if (!matched.length) return lines.join("\n") + "\n\nNothing to import — all files need manual attention.";
+
+  const payload = matched.map((i) => ({
+    path: i.path,
+    seriesId: i.series!.id,
+    seasonNumber: i.seasonNumber,
+    episodes: i.episodes!.map((e) => ({ id: e.id })),
+    quality: i.quality,
+    languages: i.languages ?? [],
+    releaseGroup: i.releaseGroup ?? "",
+    downloadId: undefined,
+  }));
+
+  await client.post("/manualimport", payload);
+  lines.push(`\nImported ${matched.length} file(s) successfully.`);
   return lines.join("\n");
 }

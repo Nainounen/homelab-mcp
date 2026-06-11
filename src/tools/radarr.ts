@@ -267,6 +267,139 @@ export async function radarrSetPathMapping(
   return `Added path mapping: ${input.host}: ${input.remote_path} → ${input.local_path}`;
 }
 
+// ─── Custom formats ───────────────────────────────────────────────────────────
+
+interface CustomFormat {
+  id: number;
+  name: string;
+  includeCustomFormatWhenRenaming: boolean;
+  specifications: unknown[];
+}
+
+interface QualityProfileFull extends QualityProfile {
+  formatItems?: Array<{ format: number; name: string; score: number }>;
+}
+
+export const CustomFormatSetSchema = z.object({
+  name: z.string().describe("Custom format name (creates or updates by name)"),
+  specifications: z
+    .string()
+    .optional()
+    .describe(
+      'JSON array of specification objects. Each spec needs at minimum: { "name": "...", "implementationName": "...", "implementation": "...", "negate": false, "required": false, "fields": [...] }. Omit to create a format with no conditions (score-only).'
+    ),
+  include_when_renaming: z.boolean().optional().default(false).describe("Include format tag in renamed files (default false)"),
+});
+
+export const CustomFormatDeleteSchema = z.object({
+  name: z.string().describe("Name of the custom format to delete"),
+});
+
+export const CustomFormatScoreSchema = z.object({
+  format_name: z.string().describe("Custom format name"),
+  profile_name: z.string().optional().describe("Quality profile name (default: first available)"),
+  score: z.number().int().describe("Score to assign (positive = prefer, negative = reject, 0 = ignore)"),
+});
+
+export async function radarrListCustomFormats(client: ArrClient): Promise<string> {
+  const [formats, profiles] = await Promise.all([
+    client.get<CustomFormat[]>("/customformat"),
+    client.get<QualityProfileFull[]>("/qualityprofile"),
+  ]);
+
+  if (!formats.length) return "No custom formats configured in Radarr.";
+
+  const scoreMap = new Map<number, Map<string, number>>();
+  for (const p of profiles) {
+    for (const fi of p.formatItems ?? []) {
+      if (!scoreMap.has(fi.format)) scoreMap.set(fi.format, new Map());
+      scoreMap.get(fi.format)!.set(p.name, fi.score);
+    }
+  }
+
+  return formats
+    .map((f) => {
+      const scores = scoreMap.get(f.id);
+      const scoreStr = scores && scores.size
+        ? Array.from(scores.entries())
+            .filter(([, s]) => s !== 0)
+            .map(([p, s]) => `${p}: ${s > 0 ? "+" : ""}${s}`)
+            .join(", ")
+        : "no score";
+      const specs = f.specifications.length;
+      return `[${f.id}] ${f.name} | ${specs} condition(s) | ${scoreStr}`;
+    })
+    .join("\n");
+}
+
+export async function radarrSetCustomFormat(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatSetSchema>
+): Promise<string> {
+  const specs = input.specifications ? JSON.parse(input.specifications) : [];
+  const existing = await client.get<CustomFormat[]>("/customformat");
+  const match = existing.find((f) => f.name.toLowerCase() === input.name.toLowerCase());
+
+  const payload = {
+    name: input.name,
+    includeCustomFormatWhenRenaming: input.include_when_renaming ?? false,
+    specifications: specs,
+  };
+
+  if (match) {
+    await client.put<CustomFormat>(`/customformat/${match.id}`, { ...payload, id: match.id });
+    return `Updated custom format "${input.name}" (id: ${match.id}).`;
+  }
+
+  const created = await client.post<CustomFormat>("/customformat", payload);
+  return `Created custom format "${input.name}" (id: ${created.id}).`;
+}
+
+export async function radarrDeleteCustomFormat(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatDeleteSchema>
+): Promise<string> {
+  const existing = await client.get<CustomFormat[]>("/customformat");
+  const match = existing.find((f) => f.name.toLowerCase() === input.name.toLowerCase());
+  if (!match) throw new Error(`Custom format "${input.name}" not found`);
+  await client.delete(`/customformat/${match.id}`);
+  return `Deleted custom format "${input.name}".`;
+}
+
+export async function radarrSetCfScore(
+  client: ArrClient,
+  input: z.infer<typeof CustomFormatScoreSchema>
+): Promise<string> {
+  const [formats, profiles] = await Promise.all([
+    client.get<CustomFormat[]>("/customformat"),
+    client.get<QualityProfileFull[]>("/qualityprofile"),
+  ]);
+
+  const format = formats.find((f) => f.name.toLowerCase() === input.format_name.toLowerCase());
+  if (!format) throw new Error(`Custom format "${input.format_name}" not found`);
+
+  let profile: QualityProfileFull;
+  if (input.profile_name) {
+    const p = profiles.find((p) => p.name.toLowerCase() === input.profile_name!.toLowerCase());
+    if (!p) throw new Error(`Quality profile "${input.profile_name}" not found. Available: ${profiles.map((p) => p.name).join(", ")}`);
+    profile = p;
+  } else {
+    profile = profiles[0];
+    if (!profile) throw new Error("No quality profiles found in Radarr");
+  }
+
+  const formatItems = (profile.formatItems ?? []).map((fi) =>
+    fi.format === format.id ? { ...fi, score: input.score } : fi
+  );
+
+  if (!formatItems.find((fi) => fi.format === format.id)) {
+    formatItems.push({ format: format.id, name: format.name, score: input.score });
+  }
+
+  await client.put(`/qualityprofile/${profile.id}`, { ...profile, formatItems });
+  return `Set score ${input.score > 0 ? "+" : ""}${input.score} for "${format.name}" in profile "${profile.name}".`;
+}
+
 // ─── Blocklist & release checker ─────────────────────────────────────────────
 
 export const RadarrBlocklistReleaseSchema = z.object({
@@ -335,5 +468,157 @@ export async function radarrCheckReleases(
     r.rejections.forEach((rej) => lines.push(`      → ${rej}`));
   });
 
+  return lines.join("\n");
+}
+
+// ─── Interactive search & grab ────────────────────────────────────────────────
+
+interface Release {
+  guid: string;
+  indexerId: number;
+  indexer?: string;
+  title: string;
+  size: number;
+  age: number;
+  seeders?: number;
+  rejections: string[];
+  quality?: { quality?: { name: string } };
+  customFormatScore?: number;
+  customFormats?: Array<{ name: string }>;
+  downloadAllowed?: boolean;
+}
+
+export const RadarrInteractiveSearchSchema = z.object({
+  tmdb_id: z.number().describe("TMDB ID of the movie"),
+  include_rejected: z.boolean().optional().default(false).describe("Also show rejected releases (default: false — only grabbable)"),
+});
+
+export const RadarrGrabReleaseSchema = z.object({
+  tmdb_id: z.number().describe("TMDB ID of the movie (same as used in radarr_interactive_search)"),
+  guid: z.string().describe("Release GUID from radarr_interactive_search output"),
+});
+
+export async function radarrInteractiveSearch(
+  client: ArrClient,
+  input: z.infer<typeof RadarrInteractiveSearchSchema>
+): Promise<string> {
+  const movie = await getMovieByTmdbId(client, input.tmdb_id);
+  if (!movie) throw new Error(`No movie with tmdbId ${input.tmdb_id} in library`);
+
+  const releases = await client.get<Release[]>(`/release?movieId=${movie.id}`);
+  if (!releases.length) return `No releases found for "${movie.title}".`;
+
+  const grabbable = releases.filter((r) => !r.rejections?.length);
+  const rejected = releases.filter((r) => r.rejections?.length);
+  const shown = input.include_rejected ? releases : grabbable;
+
+  if (!shown.length) {
+    return `No grabbable releases for "${movie.title}" (${rejected.length} rejected). Pass include_rejected: true to see why.`;
+  }
+
+  const lines: string[] = [`Interactive search for "${movie.title}" — ${grabbable.length} grabbable, ${rejected.length} rejected:\n`];
+  lines.push("Pass the guid to radarr_grab_release to download a specific release.\n");
+
+  shown.forEach((r, i) => {
+    const q = r.quality?.quality?.name ?? "?";
+    const size = bytes(r.size);
+    const age = `${r.age}d`;
+    const score = r.customFormatScore !== undefined ? ` | CF score: ${r.customFormatScore > 0 ? "+" : ""}${r.customFormatScore}` : "";
+    const status = r.rejections?.length ? ` ✗ REJECTED: ${r.rejections[0]}` : " ✓";
+    lines.push(`[${i + 1}] guid:${r.guid}`);
+    lines.push(`     ${r.title}`);
+    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId}${score}${status}`);
+  });
+
+  return lines.join("\n");
+}
+
+export async function radarrGrabRelease(
+  client: ArrClient,
+  input: z.infer<typeof RadarrGrabReleaseSchema>
+): Promise<string> {
+  const movie = await getMovieByTmdbId(client, input.tmdb_id);
+  if (!movie) throw new Error(`No movie with tmdbId ${input.tmdb_id} in library`);
+
+  const releases = await client.get<Release[]>(`/release?movieId=${movie.id}`);
+  const release = releases.find((r) => r.guid === input.guid);
+  if (!release) throw new Error(`Release with guid "${input.guid}" not found. Re-run radarr_interactive_search to get fresh GUIDs.`);
+
+  await client.post("/release", release);
+  const q = release.quality?.quality?.name ?? "?";
+  return `Grabbing "${release.title}" [${q}] — check radarr_get_queue to monitor progress.`;
+}
+
+// ─── Manual import ────────────────────────────────────────────────────────────
+
+interface ManualImportItem {
+  path: string;
+  name: string;
+  size: number;
+  quality?: { quality?: { name: string } };
+  movie?: { id: number; title: string };
+  rejections?: Array<{ reason: string }>;
+  releaseGroup?: string;
+  languages?: Array<{ id: number; name: string }>;
+}
+
+export const RadarrManualImportSchema = z.object({
+  folder: z.string().describe("Absolute path of the folder to scan for importable files"),
+  preview_only: z.boolean().optional().default(false).describe("When true, show matches without importing (default false — applies the import)"),
+  filter_existing: z.boolean().optional().default(true).describe("Skip files already in the library (default true)"),
+});
+
+export async function radarrManualImport(
+  client: ArrClient,
+  input: z.infer<typeof RadarrManualImportSchema>
+): Promise<string> {
+  const items = await client.get<ManualImportItem[]>("/manualimport", {
+    folder: input.folder,
+    filterExistingFiles: input.filter_existing,
+  });
+
+  if (!items.length) return `No importable files found in "${input.folder}".`;
+
+  const matched = items.filter((i) => i.movie?.id && !i.rejections?.length);
+  const unmatched = items.filter((i) => !i.movie?.id || i.rejections?.length);
+
+  const lines: string[] = [`Manual import scan of "${input.folder}" — ${items.length} file(s):\n`];
+
+  if (matched.length) {
+    lines.push(`READY TO IMPORT (${matched.length}):`);
+    matched.forEach((i) => {
+      const q = i.quality?.quality?.name ?? "?";
+      lines.push(`  ✓ ${i.movie!.title} | ${q} | ${bytes(i.size)}`);
+      lines.push(`      ${i.path}`);
+    });
+  }
+
+  if (unmatched.length) {
+    lines.push(`\nNEEDS ATTENTION (${unmatched.length}):`);
+    unmatched.forEach((i) => {
+      const reason = i.rejections?.map((r) => r.reason).join("; ") ?? "no movie match";
+      lines.push(`  ✗ ${i.name} — ${reason}`);
+      lines.push(`      ${i.path}`);
+    });
+  }
+
+  if (input.preview_only) {
+    lines.push("\n(Preview only — pass preview_only: false to apply the import.)");
+    return lines.join("\n");
+  }
+
+  if (!matched.length) return lines.join("\n") + "\n\nNothing to import — all files need manual attention.";
+
+  const payload = matched.map((i) => ({
+    path: i.path,
+    movieId: i.movie!.id,
+    quality: i.quality,
+    languages: i.languages ?? [],
+    releaseGroup: i.releaseGroup ?? "",
+    downloadId: undefined,
+  }));
+
+  await client.post("/manualimport", payload);
+  lines.push(`\nImported ${matched.length} file(s) successfully.`);
   return lines.join("\n");
 }
