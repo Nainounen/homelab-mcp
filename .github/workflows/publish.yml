@@ -23,6 +23,13 @@ jobs:
           node-version: "22.14"
           registry-url: "https://registry.npmjs.org"
 
+      # Node 22 ships npm 10, but OIDC trusted publishing requires npm >= 11.5.1.
+      # Without this, npm sends setup-node's placeholder token and gets E404 on publish.
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+
       - run: npm ci
 
       - run: npm run build
