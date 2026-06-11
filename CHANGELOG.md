@@ -2,6 +2,12 @@
 
 All notable changes to the homelab-mcp server.
 
+## [2.4.1] — 2026-06-11
+
+### Fixed
+- **CI publish pipeline** (broken since v2.1.0): GitHub Releases now get created (missing `contents: write` permission) with per-version notes instead of the full changelog; Docker images push under a lowercase ghcr.io name; the workflow is re-runnable via `workflow_dispatch` and skips npm publish when the version is already on the registry
+- **CI diagnostics**: npm publish runs with verbose logging and uploads npm debug logs as an artifact on failure (for npm trusted-publishing support)
+
 ## [2.4.0] — 2026-06-11
 
 ### Security

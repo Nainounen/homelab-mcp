@@ -44,14 +44,23 @@ jobs:
 
       # Skip if this version is already on the registry (manual publish or re-run)
       # so a partial failure doesn't block the Docker and Release steps below.
+      # Verbose logging per npm support, to diagnose trusted-publishing (OIDC) failures.
       - name: Publish to npm
         run: |
           VERSION="${{ steps.version.outputs.full }}"
           if [ -n "$(npm view "homelab-mcp@${VERSION}" version 2>/dev/null || true)" ]; then
             echo "homelab-mcp@${VERSION} already published — skipping npm publish"
           else
-            npm publish --provenance --access public
+            npm publish --provenance --access public --loglevel=verbose
           fi
+
+      - name: Upload npm debug logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-debug-logs
+          path: ~/.npm/_logs/
+          if-no-files-found: ignore
 
       # ── Docker image ──────────────────────────────────────────────────────────
 
