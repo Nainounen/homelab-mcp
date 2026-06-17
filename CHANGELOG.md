@@ -2,10 +2,11 @@
 
 All notable changes to the homelab-mcp server.
 
-## [2.4.2] — 2026-06-17
+## [2.4.3] — 2026-06-17
 
 ### Fixed
 - **npm OIDC trusted publishing**: configured trusted publisher on npmjs.com for `Nainounen/homelab-mcp` → `homelab-mcp` so CI publish works end-to-end
+- **Cross-platform lockfile**: use `npm install` in publish workflow instead of `npm ci` — the npm 10→11 upgrade resolves optional wasm deps (`@emnapi/*`) differently on Linux than what the macOS-generated lockfile records, causing `npm ci` to reject the lockfile
 - **CI idempotency**: Docker push and GitHub Release creation now skip if already published (re-run safe)
 - **CI cleanup**: removed verbose npm logging now that OIDC diagnostics are resolved
 

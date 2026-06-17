@@ -30,7 +30,10 @@ jobs:
           npm install -g npm@latest
           npm --version
 
-      - run: npm ci
+      # npm ci would fail when npm 11 resolves optional wasm deps differently
+      # than the lockfile (generated with npm 10 on CI / npm 11.6 on macOS).
+      # npm install tolerates these cross-platform resolution differences.
+      - run: npm install
 
       - run: npm run build
 
