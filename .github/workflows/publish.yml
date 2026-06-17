@@ -51,14 +51,13 @@ jobs:
 
       # Skip if this version is already on the registry (manual publish or re-run)
       # so a partial failure doesn't block the Docker and Release steps below.
-      # Verbose logging per npm support, to diagnose trusted-publishing (OIDC) failures.
       - name: Publish to npm
         run: |
           VERSION="${{ steps.version.outputs.full }}"
           if [ -n "$(npm view "homelab-mcp@${VERSION}" version 2>/dev/null || true)" ]; then
             echo "homelab-mcp@${VERSION} already published — skipping npm publish"
           else
-            npm publish --provenance --access public --loglevel=verbose
+            npm publish --provenance --access public
           fi
 
       - name: Upload npm debug logs on failure
@@ -83,7 +82,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if Docker image already exists
+        id: docker_check
+        run: |
+          if docker manifest inspect "${{ steps.image.outputs.name }}:${{ steps.version.outputs.full }}" >/dev/null 2>&1; then
+            echo "Image ${{ steps.image.outputs.name }}:${{ steps.version.outputs.full }} already exists — skipping Docker push"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
+        if: steps.docker_check.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -96,7 +106,20 @@ jobs:
 
       # ── GitHub Release ─────────────────────────────────────────────────────────
 
+      - name: Check if GitHub Release already exists
+        id: release_check
+        run: |
+          if gh release view "v${{ steps.version.outputs.full }}" >/dev/null 2>&1; then
+            echo "Release v${{ steps.version.outputs.full }} already exists — skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract release notes for this version
+        if: steps.release_check.outputs.skip != 'true'
         run: |
           awk -v ver="${{ steps.version.outputs.full }}" \
             'index($0, "## [" ver "]") == 1 {flag=1; next} /^## \[/ {flag=0} flag' \
@@ -107,6 +130,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
+        if: steps.release_check.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.full }}
