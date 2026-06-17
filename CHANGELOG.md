@@ -2,6 +2,13 @@
 
 All notable changes to the homelab-mcp server.
 
+## [2.4.2] — 2026-06-17
+
+### Fixed
+- **npm OIDC trusted publishing**: configured trusted publisher on npmjs.com for `Nainounen/homelab-mcp` → `homelab-mcp` so CI publish works end-to-end
+- **CI idempotency**: Docker push and GitHub Release creation now skip if already published (re-run safe)
+- **CI cleanup**: removed verbose npm logging now that OIDC diagnostics are resolved
+
 ## [2.4.1] — 2026-06-11
 
 ### Fixed
