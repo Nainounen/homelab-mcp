@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import http from "http";
 import https from "https";
-import { withRetry } from "./utils.js";
+import { bytes, withRetry } from "./utils.js";
 
 const keepAliveAgent = new http.Agent({ keepAlive: true });
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
@@ -43,6 +43,27 @@ export class ArrClient {
   }
 }
 
+export async function getArrRecords<T>(client: ArrClient, endpoint: string): Promise<T[]> {
+  const records: T[] = [];
+  for (let page = 1; ; page++) {
+    const result = await client.get<{ records: T[]; totalRecords?: number }>(endpoint, {
+      page,
+      pageSize: 100,
+    });
+    records.push(...result.records);
+    if (!result.records.length || result.totalRecords === undefined || records.length >= result.totalRecords) {
+      return records;
+    }
+  }
+}
+
+export interface ArrCommand {
+  id: number;
+  name?: string;
+  status: string;
+  message?: string;
+}
+
 /** Creates an ArrClient for v1-based apps (Lidarr, Readarr) */
 export function createArrV1Client(url: string, key: string): ArrClient {
   return new ArrClient(url, key, "api/v1");
@@ -60,4 +81,66 @@ export function createSonarrClient(): ArrClient {
   const key = process.env.SONARR_API_KEY;
   if (!url || !key) throw new Error("Missing SONARR_URL or SONARR_API_KEY");
   return new ArrClient(url, key);
+}
+
+export interface ArrLanguage {
+  id: number;
+  name: string;
+}
+
+export interface ArrMediaFile {
+  id: number;
+  path: string;
+  size: number;
+  seasonNumber?: number;
+  languages?: ArrLanguage[];
+  quality?: { quality?: { name: string } };
+  mediaInfo?: { audioLanguages?: string; subtitles?: string; audioCodec?: string };
+}
+
+export function describeArrFile(file: ArrMediaFile): string {
+  return `[fileId:${file.id}] ${file.path}\n` +
+    `  Quality: ${file.quality?.quality?.name ?? "unknown"} | Size: ${bytes(file.size)}\n` +
+    `  Assigned languages: ${file.languages?.map((l) => l.name).join(", ") || "unknown"}\n` +
+    `  Reported audio languages: ${file.mediaInfo?.audioLanguages || "unknown"} | Codec: ${file.mediaInfo?.audioCodec || "unknown"}\n` +
+    `  Reported subtitles: ${file.mediaInfo?.subtitles || "unknown"}`;
+}
+
+export async function listArrLanguages(client: ArrClient): Promise<string> {
+  const languages = await client.get<ArrLanguage[]>("/language");
+  return languages.map((language) => `[${language.id}] ${language.name}`).join("\n");
+}
+
+export async function listArrQualityProfiles(client: ArrClient): Promise<string> {
+  const profiles = await client.get<Array<{
+    id: number;
+    name: string;
+    upgradeAllowed?: boolean;
+    cutoff?: number;
+    minFormatScore?: number;
+    cutoffFormatScore?: number;
+  }>>("/qualityprofile");
+  if (!profiles.length) return "No quality profiles configured.";
+  return profiles.map((profile) =>
+    `[${profile.id}] ${profile.name} | Upgrades allowed: ${profile.upgradeAllowed ?? false} | Quality cutoff ID: ${profile.cutoff ?? "unknown"} | Minimum custom format score: ${profile.minFormatScore ?? 0} | Custom format cutoff: ${profile.cutoffFormatScore ?? 0}`
+  ).join("\n");
+}
+
+export function filterArrLanguages<T extends { languages?: ArrLanguage[] }>(releases: T[], language?: string): T[] {
+  if (!language) return releases;
+  const target = language.trim().toLowerCase();
+  return releases.filter((release) => release.languages?.some((item) => item.name.toLowerCase() === target));
+}
+
+export async function submitArrCommand(
+  client: ArrClient,
+  name: string,
+  target: Record<string, unknown>,
+  previewOnly: boolean,
+  statusTool: string
+): Promise<string> {
+  const payload = { name, ...target };
+  if (previewOnly) return `Preview only: ${JSON.stringify(payload)}. After human approval, set preview_only: false to submit this command.`;
+  const command = await client.post<ArrCommand>("/command", payload);
+  return `Submitted ${name}. [commandId:${command.id}] Status: ${command.status}. Use ${statusTool} to check completion.`;
 }

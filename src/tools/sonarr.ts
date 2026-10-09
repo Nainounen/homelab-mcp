@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArrClient } from "../arr.js";
+import { ArrClient, ArrCommand, ArrMediaFile, ArrLanguage, describeArrFile, filterArrLanguages, getArrRecords, listArrLanguages, listArrQualityProfiles, submitArrCommand } from "../arr.js";
 import { bytes, getFirstQualityProfileId, QualityProfile } from "../utils.js";
 
 interface SonarrSeries {
@@ -23,6 +23,14 @@ interface SonarrSeries {
 }
 
 interface SonarrQueueItem {
+  seriesId?: number;
+  episodeId?: number;
+  outputPath?: string;
+  errorMessage?: string;
+  trackedDownloadState?: string;
+  statusMessages?: Array<{ title: string; messages: string[] }>;
+  downloadId?: string;
+  trackedDownloadStatus?: string;
   id: number;
   title: string;
   status: string;
@@ -190,15 +198,36 @@ export async function sonarrRemoveSeries(
 }
 
 export async function sonarrGetQueue(client: ArrClient): Promise<string> {
-  const q = await client.get<{ records: SonarrQueueItem[] }>("/queue");
-  if (!q.records.length) return "No active downloads in Sonarr queue.";
-  return q.records
-    .map((item) => {
-      const pct = item.size > 0 ? (((item.size - item.sizeleft) / item.size) * 100).toFixed(1) : "?";
-      const eta = item.timeleft ?? "unknown";
-      return `${item.title}\n  Status: ${item.status} | ${pct}% | ETA: ${eta} | ${item.protocol}`;
-    })
-    .join("\n\n");
+  const records = await getArrRecords<SonarrQueueItem>(client, "/queue");
+  if (!records.length) return "No active downloads in Sonarr queue.";
+  return records.map((item) => {
+    const pct = item.size > 0 ? (((item.size - item.sizeleft) / item.size) * 100).toFixed(1) : "?";
+    const lines = [
+      `[queueId:${item.id}] ${item.title}`,
+      `  Status: ${item.status} | ${pct}% | ETA: ${item.timeleft ?? "unknown"} | ${item.protocol}`,
+    ];
+    if (item.downloadId) lines.push(`  Download ID: ${item.downloadId}`);
+    if (item.trackedDownloadStatus) lines.push(`  Download status: ${item.trackedDownloadStatus}`);
+    if (item.trackedDownloadState) lines.push(`  Download state: ${item.trackedDownloadState}`);
+    if (item.outputPath) lines.push(`  Output path: ${item.outputPath}`);
+    if (item.errorMessage) lines.push(`  Error: ${item.errorMessage}`);
+    for (const warning of item.statusMessages ?? []) {
+      lines.push(`  ${warning.title}: ${warning.messages.join("; ")}`);
+    }
+    return lines.join("\n");
+  }).join("\n\n");
+}
+
+export const SonarrCommandStatusSchema = z.object({
+  command_id: z.number().int().positive().describe("Command ID returned by a submitted operation"),
+});
+
+export async function sonarrGetCommand(
+  client: ArrClient,
+  input: z.infer<typeof SonarrCommandStatusSchema>
+): Promise<string> {
+  const command = await client.get<ArrCommand>(`/command/${input.command_id}`);
+  return `[commandId:${command.id}] ${command.name ?? "Command"} | Status: ${command.status}${command.message ? `\n${command.message}` : ""}`;
 }
 
 export async function sonarrForceSearch(
@@ -214,17 +243,17 @@ export async function sonarrForceSearch(
 // ─── Queue & blocklist & season search ───────────────────────────────────────
 
 export async function sonarrClearQueue(client: ArrClient): Promise<string> {
-  const q = await client.get<{ records: Array<{ id: number }> }>("/queue");
-  if (!q.records.length) return "Sonarr queue is already empty.";
-  const ids = [...new Set(q.records.map((r) => r.id))];
+  const records = await getArrRecords<{ id: number }>(client, "/queue");
+  if (!records.length) return "Sonarr queue is already empty.";
+  const ids = [...new Set(records.map((r) => r.id))];
   await client.deleteWithBody("/queue/bulk", { ids }, { removeFromClient: true, blocklist: false });
   return `Cleared ${ids.length} item(s) from Sonarr queue.`;
 }
 
 export async function sonarrClearBlocklist(client: ArrClient): Promise<string> {
-  const b = await client.get<{ records: Array<{ id: number }> }>("/blocklist");
-  if (!b.records.length) return "Sonarr blocklist is already empty.";
-  const ids = b.records.map((r) => r.id);
+  const records = await getArrRecords<{ id: number }>(client, "/blocklist");
+  if (!records.length) return "Sonarr blocklist is already empty.";
+  const ids = records.map((r) => r.id);
   await client.deleteWithBody("/blocklist/bulk", { ids });
   return `Cleared ${ids.length} blocklist entry(s) from Sonarr.`;
 }
@@ -265,7 +294,7 @@ export async function sonarrSetPathMapping(
   input: z.infer<typeof SonarrPathMappingSchema>
 ): Promise<string> {
   const existing = await client.get<PathMapping[]>("/remotepathmapping");
-  const match = existing.find((m) => m.host === input.host);
+  const match = existing.find((m) => m.host.toLowerCase() === input.host.toLowerCase() && m.remotePath === input.remote_path);
   if (match) {
     await client.put(`/remotepathmapping/${match.id}`, { ...match, remotePath: input.remote_path, localPath: input.local_path });
     return `Updated path mapping: ${input.host}: ${input.remote_path} → ${input.local_path}`;
@@ -418,21 +447,21 @@ export async function sonarrBlocklistRelease(
   client: ArrClient,
   input: z.infer<typeof SonarrBlocklistReleaseSchema>
 ): Promise<string> {
-  const q = await client.get<{ records: SonarrQueueItem[] }>("/queue");
-  const item = q.records.find((r) => r.id === input.queue_id);
+  const records = await getArrRecords<SonarrQueueItem>(client, "/queue");
+  const item = records.find((r) => r.id === input.queue_id);
   if (!item) throw new Error(`No queue item with id ${input.queue_id}`);
 
   await client.delete(`/queue/${input.queue_id}`, { blocklist: true, removeFromClient: true });
 
   if (!input.retry) return `Blocklisted and removed "${item.title}" from queue.`;
 
-  const series = await client.get<SonarrSeries[]>("/series");
-  const s = series.find((x) => item.title.toLowerCase().includes(x.title.toLowerCase()));
-  if (s) {
-    await client.post("/command", { name: "SeriesSearch", seriesId: s.id });
-    return `Blocklisted "${item.title}", removed from queue, and triggered a new search.`;
+  const affected = records.filter((r) => r.id === item.id || (item.downloadId && r.downloadId === item.downloadId));
+  const episodeIds = [...new Set(affected.flatMap((r) => r.episodeId ? [r.episodeId] : []))];
+  if (episodeIds.length) {
+    await client.post("/command", { name: "EpisodeSearch", episodeIds });
+    return `Blocklisted "${item.title}", removed from queue, and triggered a search for ${episodeIds.length} affected episode(s).`;
   }
-  return `Blocklisted and removed "${item.title}" from queue (could not match to a series for retry).`;
+  return `Blocklisted and removed "${item.title}" from queue. No retry submitted because the queue did not identify the affected episodes.`;
 }
 
 // ─── Release checker ──────────────────────────────────────────────────────────
@@ -453,8 +482,7 @@ export async function sonarrCheckReleases(
   const episodes = await client.get<Array<{ id: number; seasonNumber: number; episodeNumber: number }>>(`/episode?seriesId=${s.id}&seasonNumber=${seasonNum}`);
   if (!episodes.length) return `No episodes found for S${String(seasonNum).padStart(2, "0")}.`;
 
-  const ep = episodes[0];
-  const releases = await client.get<Array<{ title: string; rejections: string[]; size?: number; quality?: { quality?: { name: string } } }>>(`/release?episodeId=${ep.id}`);
+  const releases = await client.get<Array<{ title: string; rejections: string[]; size?: number; quality?: { quality?: { name: string } } }>>("/release", { seriesId: s.id, seasonNumber: seasonNum });
 
   const relevant = releases.filter((r) => !r.rejections?.some((x) => x.includes("Unknown Series")));
   const grabbable = relevant.filter((r) => !r.rejections?.length);
@@ -487,6 +515,7 @@ export async function sonarrCheckReleases(
 // ─── Interactive search & grab ────────────────────────────────────────────────
 
 interface Release {
+  languages?: ArrLanguage[];
   guid: string;
   indexerId: number;
   indexer?: string;
@@ -504,8 +533,10 @@ interface Release {
 export const SonarrInteractiveSearchSchema = z.object({
   tvdb_id: z.number().describe("TVDB ID of the series"),
   season: z.number().describe("Season number to search"),
-  episode: z.number().optional().describe("Episode number — omit to show season-pack and first-episode releases"),
+  episode: z.number().optional().describe("Episode number — omit to search the entire season"),
   include_rejected: z.boolean().optional().default(false).describe("Also show rejected releases (default: false)"),
+  limit: z.number().int().min(1).max(100).optional().default(20).describe("Maximum releases to show (default 20, maximum 100)"),
+  language: z.string().trim().min(1).optional().describe("Filter by a reported language name, such as German or English. Use include_rejected: true for alternatives to existing files."),
 });
 
 export const SonarrGrabReleaseSchema = z.object({
@@ -513,6 +544,9 @@ export const SonarrGrabReleaseSchema = z.object({
   guid: z.string().describe("Release GUID from sonarr_interactive_search output"),
   season: z.number().describe("Season number — must match what was used in sonarr_interactive_search"),
   episode: z.number().optional().describe("Episode number — must match if sonarr_interactive_search was called with one"),
+  indexer_id: z.number().int().positive().optional().describe("Indexer ID shown alongside the release GUID"),
+  allow_rejected: z.boolean().optional().default(false).describe("Allow a rejected release only after its rejection reasons have been reviewed and explicitly approved"),
+  preview_only: z.boolean().optional().default(true).describe("Preview the selected download and replacement risk (default true). Apply only after human approval."),
 });
 
 export async function sonarrInteractiveSearch(
@@ -527,23 +561,27 @@ export async function sonarrInteractiveSearch(
   );
   if (!episodes.length) return `No episodes found for S${String(input.season).padStart(2, "0")}.`;
 
-  const ep = input.episode
+  const ep = input.episode !== undefined
     ? episodes.find((e) => e.episodeNumber === input.episode)
     : episodes[0];
   if (!ep) throw new Error(`Episode ${input.episode} not found in S${String(input.season).padStart(2, "0")}`);
 
-  const releases = await client.get<Release[]>(`/release?episodeId=${ep.id}`);
-  const relevant = releases.filter((r) => !r.rejections?.some((x) => x.includes("Unknown Series")));
+  const releases = await client.get<Release[]>("/release", input.episode !== undefined
+    ? { episodeId: ep.id }
+    : { seriesId: s.id, seasonNumber: input.season });
+  const relevant = filterArrLanguages(releases, input.language);
 
   const grabbable = relevant.filter((r) => !r.rejections?.length);
   const rejected = relevant.filter((r) => r.rejections?.length);
   const shown = input.include_rejected ? relevant : grabbable;
 
+  if (!relevant.length) return `No releases match${input.language ? ` language "${input.language}"` : ""}. Language filtering uses reported release metadata, not verified audio tracks.`;
+
   if (!shown.length) {
     return `No grabbable releases for "${s.title}" S${String(input.season).padStart(2, "0")} (${rejected.length} rejected). Pass include_rejected: true to see why.`;
   }
 
-  const epLabel = input.episode
+  const epLabel = input.episode !== undefined
     ? `S${String(input.season).padStart(2, "0")}E${String(input.episode).padStart(2, "0")}`
     : `S${String(input.season).padStart(2, "0")}`;
 
@@ -552,16 +590,18 @@ export async function sonarrInteractiveSearch(
     "Pass the guid to sonarr_grab_release to download a specific release.\n",
   ];
 
-  shown.forEach((r, i) => {
+  lines.push(`Showing ${Math.min(shown.length, input.limit)} of ${shown.length} matching releases (limit: ${input.limit}, maximum 100).\n`);
+  shown.slice(0, input.limit).forEach((r, i) => {
     const q = r.quality?.quality?.name ?? "?";
     const size = bytes(r.size);
     const age = `${r.age}d`;
     const score = r.customFormatScore !== undefined ? ` | CF score: ${r.customFormatScore > 0 ? "+" : ""}${r.customFormatScore}` : "";
     const pack = r.fullSeason ? " [SEASON PACK]" : "";
-    const status = r.rejections?.length ? ` ✗ REJECTED: ${r.rejections[0]}` : " ✓";
-    lines.push(`[${i + 1}] guid:${r.guid}`);
+    const status = r.rejections?.length ? ` REJECTED: ${r.rejections.join("; ")}` : " Allowed";
+    const languages = r.languages?.map((language) => language.name).join(", ") || "unknown";
+    lines.push(`[${i + 1}] guid:${r.guid} | indexerId:${r.indexerId}`);
     lines.push(`     ${r.title}${pack}`);
-    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId}${score}${status}`);
+    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId} | Languages: ${languages}${score}${status}`);
   });
 
   return lines.join("\n");
@@ -577,15 +617,23 @@ export async function sonarrGrabRelease(
   const episodes = await client.get<Array<{ id: number; seasonNumber: number; episodeNumber: number }>>(
     `/episode?seriesId=${s.id}&seasonNumber=${input.season}`
   );
-  const ep = input.episode
+  const ep = input.episode !== undefined
     ? episodes.find((e) => e.episodeNumber === input.episode)
     : episodes[0];
   if (!ep) throw new Error(`Episode not found in S${String(input.season).padStart(2, "0")}`);
 
-  const releases = await client.get<Release[]>(`/release?episodeId=${ep.id}`);
-  const release = releases.find((r) => r.guid === input.guid);
+  const releases = await client.get<Release[]>("/release", input.episode !== undefined
+    ? { episodeId: ep.id }
+    : { seriesId: s.id, seasonNumber: input.season });
+  const matches = releases.filter((r) => r.guid === input.guid && (input.indexer_id === undefined || r.indexerId === input.indexer_id));
+  if (matches.length > 1) throw new Error("This GUID appears on multiple indexers. Provide indexer_id from the search results.");
+  const release = matches[0];
   if (!release) throw new Error(`Release with guid "${input.guid}" not found. Re-run sonarr_interactive_search to get fresh GUIDs.`);
 
+  const languages = release.languages?.map((language) => language.name).join(", ") || "unknown";
+  const warnings = release.rejections?.join("; ") || "none";
+  if (input.preview_only) return `Preview only: "${release.title}" | Languages: ${languages} | Rejections: ${warnings}. Importing this release may replace existing media. After human approval, set preview_only: false to download${release.rejections?.length ? " and allow_rejected: true to acknowledge the rejection reasons" : ""}.`;
+  if (release.rejections?.length && !input.allow_rejected) throw new Error(`Release rejected: ${warnings}. Review these reasons and obtain human approval before setting allow_rejected: true.`);
   await client.post("/release", release);
   const q = release.quality?.quality?.name ?? "?";
   return `Grabbing "${release.title}" [${q}] — check sonarr_get_queue to monitor progress.`;
@@ -594,6 +642,10 @@ export async function sonarrGrabRelease(
 // ─── Manual import ────────────────────────────────────────────────────────────
 
 interface SonarrManualImportItem {
+  folderName?: string;
+  downloadId?: string;
+  indexerFlags?: number;
+  releaseType?: string;
   path: string;
   name: string;
   size: number;
@@ -608,7 +660,8 @@ interface SonarrManualImportItem {
 
 export const SonarrManualImportSchema = z.object({
   folder: z.string().describe("Absolute path of the folder to scan for importable files"),
-  preview_only: z.boolean().optional().default(false).describe("When true, show matches without importing (default false — applies the import)"),
+  preview_only: z.boolean().optional().default(true).describe("Show matches without importing (default true). Set false to submit an import."),
+  import_mode: z.enum(["auto", "copy", "move"]).optional().default("copy").describe("Import mode (default copy preserves source files; move removes them; auto lets the service decide)"),
   filter_existing: z.boolean().optional().default(true).describe("Skip files already in the library (default true)"),
 });
 
@@ -641,7 +694,7 @@ export async function sonarrManualImport(
   if (unmatched.length) {
     lines.push(`\nNEEDS ATTENTION (${unmatched.length}):`);
     unmatched.forEach((i) => {
-      const reason = i.rejections?.map((r) => r.reason).join("; ") ?? "no series/episode match";
+      const reason = i.rejections?.map((r) => r.reason).join("; ") || "no series/episode match";
       lines.push(`  ✗ ${i.name} — ${reason}`);
       lines.push(`      ${i.path}`);
     });
@@ -656,16 +709,112 @@ export async function sonarrManualImport(
 
   const payload = matched.map((i) => ({
     path: i.path,
+    folderName: i.folderName,
+    indexerFlags: i.indexerFlags ?? 0,
+    releaseType: i.releaseType,
     seriesId: i.series!.id,
     seasonNumber: i.seasonNumber,
-    episodes: i.episodes!.map((e) => ({ id: e.id })),
+    episodeIds: i.episodes!.map((e) => e.id),
     quality: i.quality,
     languages: i.languages ?? [],
     releaseGroup: i.releaseGroup ?? "",
-    downloadId: undefined,
+    downloadId: i.downloadId,
   }));
 
-  await client.post("/manualimport", payload);
-  lines.push(`\nImported ${matched.length} file(s) successfully.`);
+  const command = await client.post<ArrCommand>("/command", {
+    name: "ManualImport",
+    files: payload,
+    importMode: input.import_mode,
+  });
+  lines.push(`\nSubmitted import of ${matched.length} file(s). [commandId:${command.id}] Status: ${command.status}. Use sonarr_get_command to check completion.`);
   return lines.join("\n");
+}
+
+export const SonarrExistingItemSchema = z.object({
+  tvdb_id: z.number().int().positive().describe("External ID of an existing library item"),
+  preview_only: z.boolean().optional().default(true).describe("Preview the change (default true). Apply only after human approval."),
+});
+
+export const SonarrSetQualityProfileSchema = SonarrExistingItemSchema.extend({
+  quality_profile: z.string().trim().min(1).describe("Exact name from sonarr_list_quality_profiles"),
+});
+
+export async function sonarrListLanguages(client: ArrClient): Promise<string> {
+  return listArrLanguages(client);
+}
+export async function sonarrListQualityProfiles(client: ArrClient): Promise<string> {
+  return listArrQualityProfiles(client);
+}
+
+export async function sonarrRefreshSeries(client: ArrClient, input: z.infer<typeof SonarrExistingItemSchema>): Promise<string> {
+  const item = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!item) throw new Error("Item not found in the library");
+  return submitArrCommand(client, "RefreshSeries", { seriesIds: [item.id] }, input.preview_only, "sonarr_get_command");
+}
+
+export async function sonarrRescanSeries(client: ArrClient, input: z.infer<typeof SonarrExistingItemSchema>): Promise<string> {
+  const item = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!item) throw new Error("Item not found in the library");
+  return submitArrCommand(client, "RescanSeries", { seriesId: item.id }, input.preview_only, "sonarr_get_command");
+}
+
+export async function sonarrSetQualityProfile(client: ArrClient, input: z.infer<typeof SonarrSetQualityProfileSchema>): Promise<string> {
+  const item = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!item) throw new Error("Item not found in the library");
+  const profiles = await client.get<QualityProfile[]>("/qualityprofile");
+  const profile = profiles.find((candidate) => candidate.name.toLowerCase() === input.quality_profile.toLowerCase());
+  if (!profile) throw new Error(`Quality profile not found. Available: ${profiles.map((candidate) => candidate.name).join(", ")}`);
+  if (item.qualityProfileId === profile.id) return `"${item.title}" already uses "${profile.name}".`;
+  const previous = profiles.find((candidate) => candidate.id === item.qualityProfileId)?.name ?? String(item.qualityProfileId);
+  if (input.preview_only) return `Preview only: "${item.title}": "${previous}" -> "${profile.name}". This may allow future upgrades. After human approval, set preview_only: false to apply.`;
+  await client.put("/series/" + item.id, { ...item, qualityProfileId: profile.id });
+  return `Updated "${item.title}" to quality profile "${profile.name}". No immediate search was submitted.`;
+}
+
+interface SonarrEpisode {
+  id: number;
+  episodeFileId?: number;
+  title: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  monitored: boolean;
+  hasFile: boolean;
+  airDateUtc?: string;
+}
+
+export const SonarrInspectEpisodesSchema = z.object({
+  tvdb_id: z.number().int().positive(),
+  season: z.number().int().min(0).optional(),
+  episode: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(100).optional().default(50),
+}).refine((input) => input.episode === undefined || input.season !== undefined, {
+  message: "Provide season when selecting an episode",
+  path: ["season"],
+});
+
+async function getInspectedEpisodes(client: ArrClient, input: z.infer<typeof SonarrInspectEpisodesSchema>): Promise<{ series: SonarrSeries; episodes: SonarrEpisode[] }> {
+  const series = await getSeriesByTvdbId(client, input.tvdb_id);
+  if (!series) throw new Error("Series not found in the library");
+  const episodes = await client.get<SonarrEpisode[]>("/episode", { seriesId: series.id, seasonNumber: input.season });
+  const selected = episodes.filter((episode) => input.episode === undefined || episode.episodeNumber === input.episode);
+  selected.sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+  return { series, episodes: selected };
+}
+
+export async function sonarrListEpisodes(client: ArrClient, input: z.infer<typeof SonarrInspectEpisodesSchema>): Promise<string> {
+  const { series, episodes } = await getInspectedEpisodes(client, input);
+  if (!episodes.length) return "No episodes match this selection.";
+  const lines = episodes.slice(0, input.limit).map((episode) =>
+    `[episodeId:${episode.id}] S${String(episode.seasonNumber).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")} ${episode.title} | Monitored: ${episode.monitored} | Downloaded: ${episode.hasFile} | Air date: ${episode.airDateUtc ?? "unknown"} | File ID: ${episode.episodeFileId ?? "none"}`
+  );
+  return `${series.title}: showing ${lines.length} of ${episodes.length} episodes.\n` + lines.join("\n");
+}
+
+export async function sonarrListEpisodeFiles(client: ArrClient, input: z.infer<typeof SonarrInspectEpisodesSchema>): Promise<string> {
+  const { series, episodes } = await getInspectedEpisodes(client, input);
+  const selectedIds = new Set(episodes.filter((episode) => episode.hasFile).map((episode) => episode.episodeFileId));
+  const files = (await client.get<ArrMediaFile[]>("/episodefile", { seriesId: series.id })).filter((file) => selectedIds.has(file.id));
+  if (!files.length) return "No downloaded episode files match this selection.";
+  const shown = files.slice(0, input.limit);
+  return `${series.title}: showing ${shown.length} of ${files.length} files.\n` + shown.map(describeArrFile).join("\n\n");
 }

@@ -7,6 +7,181 @@ export function sonarrModule(client: ArrClient): ToolModule {
     domain: "Sonarr",
     tools: [
       {
+        "name": "sonarr_refresh_series",
+        "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tvdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tvdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "sonarr_rescan_series",
+        "description": "Rescan the existing library folder for media files. This can update file records. Preview by default; returns a command ID when applied. Does not submit a download search.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tvdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tvdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "sonarr_list_languages",
+        "description": "List supported languages for Sonarr.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "sonarr_list_quality_profiles",
+        "description": "List supported quality profiles for Sonarr.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "sonarr_set_quality_profile",
+        "description": "Change the quality profile of one existing library item. Preview by default. Existing file quality is unchanged; future automatic upgrades may become eligible.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tvdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "quality_profile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact quality profile name from list_quality_profiles"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tvdb_id",
+            "quality_profile"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "sonarr_list_episodes",
+        "description": "Inspect episode IDs, air dates, monitoring, download status, and file IDs for an existing series.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tvdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "season": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "episode": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Requires season"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          "required": [
+            "tvdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "sonarr_list_episode_files",
+        "description": "Inspect existing episode files, quality, assigned languages, and reported audio/subtitle languages. This does not edit files or audio tracks.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tvdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "season": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "episode": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Requires season"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          "required": [
+            "tvdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
         name: "sonarr_search_series",
         description: "Search for a TV series by title. Returns TVDB IDs, overviews, and network info. Use before sonarr_add_series.",
         inputSchema: {
@@ -58,8 +233,17 @@ export function sonarrModule(client: ArrClient): ToolModule {
         },
       },
       {
+        name: "sonarr_get_command",
+        description: "Check whether a submitted command is queued, running, completed, or failed.",
+        inputSchema: {
+          type: "object",
+          properties: { command_id: { type: "integer", minimum: 1, description: "Command ID returned by an import, refresh, or rescan" } },
+          required: ["command_id"],
+        },
+      },
+      {
         name: "sonarr_get_queue",
-        description: "Show active and queued episode downloads in Sonarr with progress and ETA.",
+        description: "Show active and queued episode downloads in Sonarr with queue IDs, progress, ETA, output paths, and import errors.",
         inputSchema: { type: "object", properties: {}, required: [] },
       },
       {
@@ -138,17 +322,20 @@ export function sonarrModule(client: ArrClient): ToolModule {
       {
         name: "sonarr_interactive_search",
         description:
-          "Show all available releases for a TV series episode or season with their GUIDs, quality, size, age, indexer, and custom format score. " +
+          "Show available releases for a TV series episode or season with their GUIDs, quality, languages, size, age, indexer ID, and custom format score. " +
           "Use this when you want to manually pick a specific release instead of letting Sonarr auto-grab. " +
           "WORKFLOW: (1) Call this to browse releases for a season or episode. (2) Pick a release by guid. (3) Call sonarr_grab_release with that guid. " +
+          "For existing downloaded media, use include_rejected: true to see alternatives rejected because the current file meets the cutoff. " +
           "Season packs are labelled [SEASON PACK]. By default only shows grabbable releases — pass include_rejected: true to also see why others were rejected.",
         inputSchema: {
           type: "object",
           properties: {
             tvdb_id: { type: "number", description: "TVDB ID of the series" },
             season: { type: "number", description: "Season number" },
-            episode: { type: "number", description: "Episode number — omit to see season-pack and first-episode releases" },
+            episode: { type: "number", description: "Episode number — omit to search the entire season" },
+            language: { type: "string", minLength: 1, description: "Filter by reported language, such as German. Use include_rejected: true to inspect alternatives for existing files." },
             include_rejected: { type: "boolean", description: "Also show rejected releases (default false)" },
+            limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum releases to show (default 20, maximum 100)" },
           },
           required: ["tvdb_id", "season"],
         },
@@ -156,12 +343,16 @@ export function sonarrModule(client: ArrClient): ToolModule {
       {
         name: "sonarr_grab_release",
         description:
-          "Grab a specific release by its GUID (from sonarr_interactive_search) and send it to the download client. " +
+          "Preview or grab a specific release by its GUID (from sonarr_interactive_search) and send it to the download client. " +
+          "Defaults to preview_only: true. Obtain human approval before preview_only: false. A rejected release also requires allow_rejected: true. " +
           "After grabbing, use sonarr_get_queue to monitor progress.",
         inputSchema: {
           type: "object",
           properties: {
             tvdb_id: { type: "number", description: "TVDB ID of the series" },
+            indexer_id: { type: "integer", minimum: 1, description: "Indexer ID from the search result; required if the GUID is ambiguous" },
+            allow_rejected: { type: "boolean", default: false, description: "Acknowledge rejection reasons only after human approval" },
+            preview_only: { type: "boolean", default: true, description: "Preview the download and replacement risk; set false after human approval" },
             guid: { type: "string", description: "Release GUID from sonarr_interactive_search (shown as guid:xxx)" },
             season: { type: "number", description: "Season number — must match what was used in sonarr_interactive_search" },
             episode: { type: "number", description: "Episode number — include if sonarr_interactive_search was called with one" },
@@ -176,13 +367,15 @@ export function sonarrModule(client: ArrClient): ToolModule {
           "Sonarr will auto-match each file to a series and episode in the library. " +
           "WORKFLOW: (1) Call with preview_only: true to see what will be matched. " +
           "(2) If matches look correct, call again with preview_only: false to apply. " +
+          "Imports run asynchronously. Use sonarr_get_command with the returned command ID to check completion. " +
           "Files without a confident match are reported separately for manual attention.",
         inputSchema: {
           type: "object",
           properties: {
             folder: { type: "string", description: "Absolute path of the folder to scan" },
-            preview_only: { type: "boolean", description: "Show matches without importing (default false)" },
+            preview_only: { type: "boolean", description: "Show matches without importing (default true)" },
             filter_existing: { type: "boolean", description: "Skip files already in the library (default true)" },
+            import_mode: { type: "string", enum: ["auto", "copy", "move"], description: "Import mode (default copy preserves source files)" },
           },
           required: ["folder"],
         },
@@ -248,10 +441,18 @@ export function sonarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "sonarr_refresh_series": return impl.sonarrRefreshSeries(client, impl.SonarrExistingItemSchema.parse(args));
+        case "sonarr_rescan_series": return impl.sonarrRescanSeries(client, impl.SonarrExistingItemSchema.parse(args));
+        case "sonarr_list_languages": return impl.sonarrListLanguages(client);
+        case "sonarr_list_quality_profiles": return impl.sonarrListQualityProfiles(client);
+        case "sonarr_set_quality_profile": return impl.sonarrSetQualityProfile(client, impl.SonarrSetQualityProfileSchema.parse(args));
+        case "sonarr_list_episodes": return impl.sonarrListEpisodes(client, impl.SonarrInspectEpisodesSchema.parse(args));
+        case "sonarr_list_episode_files": return impl.sonarrListEpisodeFiles(client, impl.SonarrInspectEpisodesSchema.parse(args));
         case "sonarr_search_series":        return impl.sonarrSearchSeries(client, impl.SonarrSearchSchema.parse(args));
         case "sonarr_add_series":           return impl.sonarrAddSeries(client, impl.SonarrAddSeriesSchema.parse(args));
         case "sonarr_list_series":          return impl.sonarrListSeries(client, impl.SonarrListSeriesSchema.parse(args));
         case "sonarr_remove_series":        return impl.sonarrRemoveSeries(client, impl.SonarrRemoveSeriesSchema.parse(args));
+        case "sonarr_get_command":          return impl.sonarrGetCommand(client, impl.SonarrCommandStatusSchema.parse(args));
         case "sonarr_get_queue":            return impl.sonarrGetQueue(client);
         case "sonarr_force_search":         return impl.sonarrForceSearch(client, impl.SonarrForceSearchSchema.parse(args));
         case "sonarr_season_search":        return impl.sonarrSeasonSearch(client, impl.SonarrSeasonSearchSchema.parse(args));

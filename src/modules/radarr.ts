@@ -7,6 +7,131 @@ export function radarrModule(client: ArrClient): ToolModule {
     domain: "Radarr",
     tools: [
       {
+        "name": "radarr_refresh_movie",
+        "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tmdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tmdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "radarr_rescan_movie",
+        "description": "Rescan the existing library folder for media files. This can update file records. Preview by default; returns a command ID when applied. Does not submit a download search.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tmdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tmdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "radarr_list_languages",
+        "description": "List supported languages for Radarr.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "radarr_list_quality_profiles",
+        "description": "List supported quality profiles for Radarr.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "radarr_set_quality_profile",
+        "description": "Change the quality profile of one existing library item. Preview by default. Existing file quality is unchanged; future automatic upgrades may become eligible.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tmdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            },
+            "quality_profile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact quality profile name from list_quality_profiles"
+            },
+            "preview_only": {
+              "type": "boolean",
+              "default": true,
+              "description": "Preview only by default. Set false only after human approval."
+            }
+          },
+          "required": [
+            "tmdb_id",
+            "quality_profile"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "radarr_get_movie_file",
+        "description": "Inspect existing movie files, quality, assigned languages, and reported audio/subtitle languages. This does not edit files or audio tracks.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tmdb_id": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "External ID of an existing library item"
+            }
+          },
+          "required": [
+            "tmdb_id"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
         name: "radarr_search_movie",
         description: "Search for a movie by title. Returns TMDB IDs, overviews, and ratings. Use before radarr_add_movie.",
         inputSchema: {
@@ -53,8 +178,17 @@ export function radarrModule(client: ArrClient): ToolModule {
         },
       },
       {
+        name: "radarr_get_command",
+        description: "Check whether a submitted command is queued, running, completed, or failed.",
+        inputSchema: {
+          type: "object",
+          properties: { command_id: { type: "integer", minimum: 1, description: "Command ID returned by an import, refresh, or rescan" } },
+          required: ["command_id"],
+        },
+      },
+      {
         name: "radarr_get_queue",
-        description: "Show active and queued movie downloads in Radarr with progress and ETA.",
+        description: "Show active and queued movie downloads in Radarr with queue IDs, progress, ETA, output paths, and import errors.",
         inputSchema: { type: "object", properties: {}, required: [] },
       },
       {
@@ -123,15 +257,18 @@ export function radarrModule(client: ArrClient): ToolModule {
       {
         name: "radarr_interactive_search",
         description:
-          "Show all available releases for a movie with their GUIDs, quality, size, age, indexer, and custom format score. " +
+          "Show available releases for a movie with their GUIDs, quality, languages, size, age, indexer ID, and custom format score. " +
           "Use this when you want to manually pick a specific release instead of letting Radarr auto-grab. " +
           "WORKFLOW: (1) Call this to browse releases. (2) Pick a release by guid. (3) Call radarr_grab_release with that guid. " +
+          "For existing downloaded media, use include_rejected: true to see alternatives rejected because the current file meets the cutoff. " +
           "By default only shows grabbable releases — pass include_rejected: true to also see why others were rejected.",
         inputSchema: {
           type: "object",
           properties: {
             tmdb_id: { type: "number", description: "TMDB ID of the movie" },
+            language: { type: "string", minLength: 1, description: "Filter by reported language, such as German. Use include_rejected: true to inspect alternatives for existing files." },
             include_rejected: { type: "boolean", description: "Also show rejected releases (default false)" },
+            limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum releases to show (default 20, maximum 100)" },
           },
           required: ["tmdb_id"],
         },
@@ -139,12 +276,16 @@ export function radarrModule(client: ArrClient): ToolModule {
       {
         name: "radarr_grab_release",
         description:
-          "Grab a specific release by its GUID (from radarr_interactive_search) and send it to the download client. " +
+          "Preview or grab a specific release by its GUID (from radarr_interactive_search) and send it to the download client. " +
+          "Defaults to preview_only: true. Obtain human approval before preview_only: false. A rejected release also requires allow_rejected: true. " +
           "After grabbing, use radarr_get_queue to monitor progress.",
         inputSchema: {
           type: "object",
           properties: {
             tmdb_id: { type: "number", description: "TMDB ID of the movie" },
+            indexer_id: { type: "integer", minimum: 1, description: "Indexer ID from the search result; required if the GUID is ambiguous" },
+            allow_rejected: { type: "boolean", default: false, description: "Acknowledge rejection reasons only after human approval" },
+            preview_only: { type: "boolean", default: true, description: "Preview the download and replacement risk; set false after human approval" },
             guid: { type: "string", description: "Release GUID from radarr_interactive_search (shown as guid:xxx)" },
           },
           required: ["tmdb_id", "guid"],
@@ -157,14 +298,16 @@ export function radarrModule(client: ArrClient): ToolModule {
           "Radarr will auto-match each file to a movie in the library. " +
           "WORKFLOW: (1) Call with preview_only: true to see what will be matched. " +
           "(2) If matches look correct, call again with preview_only: false to apply. " +
+          "Imports run asynchronously. Use radarr_get_command with the returned command ID to check completion. " +
           "Files without a confident match are reported separately for manual attention. " +
           "Useful after manually moving files into a watched folder or after a partial download.",
         inputSchema: {
           type: "object",
           properties: {
             folder: { type: "string", description: "Absolute path of the folder to scan" },
-            preview_only: { type: "boolean", description: "Show matches without importing (default false)" },
+            preview_only: { type: "boolean", description: "Show matches without importing (default true)" },
             filter_existing: { type: "boolean", description: "Skip files already in the library (default true)" },
+            import_mode: { type: "string", enum: ["auto", "copy", "move"], description: "Import mode (default copy preserves source files)" },
           },
           required: ["folder"],
         },
@@ -230,10 +373,17 @@ export function radarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "radarr_refresh_movie": return impl.radarrRefreshMovie(client, impl.RadarrExistingItemSchema.parse(args));
+        case "radarr_rescan_movie": return impl.radarrRescanMovie(client, impl.RadarrExistingItemSchema.parse(args));
+        case "radarr_list_languages": return impl.radarrListLanguages(client);
+        case "radarr_list_quality_profiles": return impl.radarrListQualityProfiles(client);
+        case "radarr_set_quality_profile": return impl.radarrSetQualityProfile(client, impl.RadarrSetQualityProfileSchema.parse(args));
+        case "radarr_get_movie_file": return impl.radarrGetMovieFile(client, impl.RadarrInspectMovieFileSchema.parse(args));
         case "radarr_search_movie":        return impl.radarrSearchMovie(client, impl.RadarrSearchSchema.parse(args));
         case "radarr_add_movie":           return impl.radarrAddMovie(client, impl.RadarrAddMovieSchema.parse(args));
         case "radarr_list_movies":         return impl.radarrListMovies(client, impl.RadarrListMoviesSchema.parse(args));
         case "radarr_remove_movie":        return impl.radarrRemoveMovie(client, impl.RadarrRemoveMovieSchema.parse(args));
+        case "radarr_get_command":          return impl.radarrGetCommand(client, impl.RadarrCommandStatusSchema.parse(args));
         case "radarr_get_queue":           return impl.radarrGetQueue(client);
         case "radarr_force_search":        return impl.radarrForceSearch(client, impl.RadarrForceSearchSchema.parse(args));
         case "radarr_get_history":         return impl.radarrGetHistory(client);
