@@ -53,7 +53,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "node --max-old-space-size=4096 node_modules/.bin/tsc",
+    "build": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "new-module": "node scripts/new-module.js",
