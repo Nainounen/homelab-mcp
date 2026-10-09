@@ -8,7 +8,7 @@ export class OverseerrClient {
 
   constructor(baseUrl: string, apiKey: string) {
     this.http = axios.create({
-      baseURL: `${baseUrl}/api/v1`,
+      baseURL: `${baseUrl.replace(/\/+$/, "").replace(/\/api\/v1$/, "")}/api/v1`,
       headers: { "X-Api-Key": apiKey },
       httpAgent: keepAliveAgent,
       timeout: 15_000,
