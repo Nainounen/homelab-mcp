@@ -526,6 +526,7 @@ interface Release {
   rejections: string[];
   quality?: { quality?: { name: string } };
   customFormatScore?: number;
+  customFormats?: Array<{ name: string }>;
   downloadAllowed?: boolean;
   fullSeason?: boolean;
 }
@@ -573,7 +574,7 @@ export async function sonarrInteractiveSearch(
 
   const grabbable = relevant.filter((r) => !r.rejections?.length);
   const rejected = relevant.filter((r) => r.rejections?.length);
-  const shown = input.include_rejected ? relevant : grabbable;
+  const shown = [...(input.include_rejected ? relevant : grabbable)].sort((a, b) => (b.customFormatScore ?? 0) - (a.customFormatScore ?? 0));
 
   if (!relevant.length) return `No releases match${input.language ? ` language "${input.language}"` : ""}. Language filtering uses reported release metadata, not verified audio tracks.`;
 
@@ -590,7 +591,7 @@ export async function sonarrInteractiveSearch(
     "Pass the guid to sonarr_grab_release to download a specific release.\n",
   ];
 
-  lines.push(`Showing ${Math.min(shown.length, input.limit)} of ${shown.length} matching releases (limit: ${input.limit}, maximum 100).\n`);
+  lines.push(`Showing ${Math.min(shown.length, input.limit)} of ${shown.length} matching releases, highest profile custom-format score first (limit: ${input.limit}, maximum 100).\n`);
   shown.slice(0, input.limit).forEach((r, i) => {
     const q = r.quality?.quality?.name ?? "?";
     const size = bytes(r.size);
@@ -599,9 +600,10 @@ export async function sonarrInteractiveSearch(
     const pack = r.fullSeason ? " [SEASON PACK]" : "";
     const status = r.rejections?.length ? ` REJECTED: ${r.rejections.join("; ")}` : " Allowed";
     const languages = r.languages?.map((language) => language.name).join(", ") || "unknown";
+    const formats = r.customFormats?.map((format) => format.name).join(", ") || "none reported";
     lines.push(`[${i + 1}] guid:${r.guid} | indexerId:${r.indexerId}`);
     lines.push(`     ${r.title}${pack}`);
-    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId} | Languages: ${languages}${score}${status}`);
+    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId} | Languages: ${languages}${score} | Matched formats: ${formats}${status}`);
   });
 
   return lines.join("\n");

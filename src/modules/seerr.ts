@@ -1,11 +1,13 @@
 import { ToolModule } from "../types.js";
 import { OverseerrClient } from "../overseerr.js";
+import { seerrProfileTools, seerrProfileSettings, seerrSetProfile, seerrProfileSchema } from "../tools/seerr-profiles.js";
 import * as impl from "../tools/overseerr.js";
 
 export function seerrModule(client: OverseerrClient): ToolModule {
   return {
     domain: "Seerr",
     tools: [
+      ...seerrProfileTools,
       { name: "seerr_get_request", description: "Inspect a request, media availability, season statuses and linked Arr IDs.",
         inputSchema: { type: "object", properties: { request_id: { type: "integer", minimum: 1 } }, required: ["request_id"] } },
       { name: "seerr_retry_request", description: "Preview or retry a failed request in Seerr. Applying sends it to the configured Arr service.",
@@ -63,6 +65,8 @@ export function seerrModule(client: OverseerrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "seerr_get_quality_profile_settings": return seerrProfileSettings(client);
+        case "seerr_set_quality_profile": return seerrSetProfile(client,seerrProfileSchema.parse(args));
         case "seerr_get_request": return impl.overseerrGetRequest(client, impl.OverseerrRequestSchema.parse(args));
         case "seerr_retry_request": return impl.overseerrRetryRequest(client, impl.OverseerrRequestActionSchema.parse(args));
         case "seerr_list_requests":  return impl.overseerrListRequests(client, impl.OverseerrListSchema.parse(args));

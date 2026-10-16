@@ -25,6 +25,8 @@ export class OverseerrClient {
     return r.data;
   }
 
+  async put<T>(path: string, data?: unknown): Promise<T> { return (await this.http.put<T>(path,data)).data; }
+
   async delete(path: string): Promise<void> {
     await this.http.delete(path);
   }

@@ -165,7 +165,7 @@ export async function radarrListMovies(
   const shown = sorted.slice(0, input.limit);
   const lines = shown.map((m) => {
     const status = m.hasFile ? `✓ ${bytes(m.sizeOnDisk)}` : m.monitored ? "⬇ missing" : "○ unmonitored";
-    return `[${m.tmdbId}] ${m.title} (${m.year}) — ${status}`;
+    return `[${m.tmdbId}] ${m.title} (${m.year}) — ${status} | movieId=${m.id} | profileId=${m.qualityProfileId ?? "unknown"}`;
   });
 
   const header =
@@ -539,7 +539,7 @@ export async function radarrInteractiveSearch(
   const relevant = filterArrLanguages(releases, input.language);
   const grabbable = relevant.filter((r) => !r.rejections?.length);
   const rejected = relevant.filter((r) => r.rejections?.length);
-  const shown = input.include_rejected ? relevant : grabbable;
+  const shown = [...(input.include_rejected ? relevant : grabbable)].sort((a, b) => (b.customFormatScore ?? 0) - (a.customFormatScore ?? 0));
 
   if (!relevant.length) return `No releases match${input.language ? ` language "${input.language}"` : ""}. Language filtering uses reported release metadata, not verified audio tracks.`;
 
@@ -550,7 +550,7 @@ export async function radarrInteractiveSearch(
   const lines: string[] = [`Interactive search for "${movie.title}" — ${grabbable.length} grabbable, ${rejected.length} rejected:\n`];
   lines.push("Pass the guid to radarr_grab_release to download a specific release.\n");
 
-  lines.push(`Showing ${Math.min(shown.length, input.limit)} of ${shown.length} matching releases (limit: ${input.limit}, maximum 100).\n`);
+  lines.push(`Showing ${Math.min(shown.length, input.limit)} of ${shown.length} matching releases, highest profile custom-format score first (limit: ${input.limit}, maximum 100).\n`);
   shown.slice(0, input.limit).forEach((r, i) => {
     const q = r.quality?.quality?.name ?? "?";
     const size = bytes(r.size);
@@ -558,9 +558,10 @@ export async function radarrInteractiveSearch(
     const score = r.customFormatScore !== undefined ? ` | CF score: ${r.customFormatScore > 0 ? "+" : ""}${r.customFormatScore}` : "";
     const status = r.rejections?.length ? ` REJECTED: ${r.rejections.join("; ")}` : " Allowed";
     const languages = r.languages?.map((language) => language.name).join(", ") || "unknown";
+    const formats = r.customFormats?.map((format) => format.name).join(", ") || "none reported";
     lines.push(`[${i + 1}] guid:${r.guid} | indexerId:${r.indexerId}`);
     lines.push(`     ${r.title}`);
-    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId} | Languages: ${languages}${score}${status}`);
+    lines.push(`     ${q} | ${size} | ${age} old | ${r.indexer ?? r.indexerId} | Languages: ${languages}${score} | Matched formats: ${formats}${status}`);
   });
 
   return lines.join("\n");

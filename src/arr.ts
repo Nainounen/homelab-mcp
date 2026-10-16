@@ -29,6 +29,10 @@ export class ArrClient {
     return r.data;
   }
 
+  async postOnce<T>(path: string, data?: unknown, timeoutMs?: number): Promise<T> { return (await this.http.post<T>(path,data,timeoutMs ? {timeout:timeoutMs} : undefined)).data; }
+
+  async putOnce<T>(path: string, data?: unknown): Promise<T> { return (await this.http.put<T>(path,data)).data; }
+
   async put<T>(path: string, data?: unknown): Promise<T> {
     const r = await withRetry(() => this.http.put<T>(path, data));
     return r.data;
@@ -36,6 +40,10 @@ export class ArrClient {
 
   async delete(path: string, params?: Record<string, unknown>): Promise<void> {
     await withRetry(() => this.http.delete(path, { params }));
+  }
+
+  async deleteOnce(path: string): Promise<void> {
+    await this.http.delete(path);
   }
 
   async deleteWithBody(path: string, body: unknown, params?: Record<string, unknown>): Promise<void> {

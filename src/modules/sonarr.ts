@@ -1,11 +1,15 @@
 import { ToolModule } from "../types.js";
 import { ArrClient } from "../arr.js";
+import { QueueDismissSchema, dismissQueueItem, queueDismissTool } from "../tools/queue.js";
+import { qualityProfileTools, profileDetails, saveProfile, deleteProfile, profileIdSchema, createProfileSchema, editProfileSchema, deleteProfileSchema } from "../tools/quality-profiles.js";
 import * as impl from "../tools/sonarr.js";
 
 export function sonarrModule(client: ArrClient): ToolModule {
   return {
     domain: "Sonarr",
     tools: [
+      ...qualityProfileTools("sonarr"),
+      queueDismissTool("sonarr"),
       {
         "name": "sonarr_refresh_series",
         "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
@@ -322,7 +326,7 @@ export function sonarrModule(client: ArrClient): ToolModule {
       {
         name: "sonarr_interactive_search",
         description:
-          "Show available releases for a TV series episode or season with their GUIDs, quality, languages, size, age, indexer ID, and custom format score. " +
+          "Show available releases for a TV series episode or season with their GUIDs, quality, languages, size, age, indexer ID, custom format score and matched formats, sorted by highest profile score first. " +
           "Use this when you want to manually pick a specific release instead of letting Sonarr auto-grab. " +
           "WORKFLOW: (1) Call this to browse releases for a season or episode. (2) Pick a release by guid. (3) Call sonarr_grab_release with that guid. " +
           "For existing downloaded media, use include_rejected: true to see alternatives rejected because the current file meets the cutoff. " +
@@ -441,6 +445,11 @@ export function sonarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "sonarr_get_quality_profile": return profileDetails(client,profileIdSchema.parse(args));
+        case "sonarr_create_quality_profile": return saveProfile(client,createProfileSchema.parse(args));
+        case "sonarr_edit_quality_profile": return saveProfile(client,editProfileSchema.parse(args));
+        case "sonarr_delete_quality_profile": return deleteProfile(client,"sonarr",deleteProfileSchema.parse(args));
+        case "sonarr_remove_queue_item": return dismissQueueItem(client, QueueDismissSchema.parse(args));
         case "sonarr_refresh_series": return impl.sonarrRefreshSeries(client, impl.SonarrExistingItemSchema.parse(args));
         case "sonarr_rescan_series": return impl.sonarrRescanSeries(client, impl.SonarrExistingItemSchema.parse(args));
         case "sonarr_list_languages": return impl.sonarrListLanguages(client);

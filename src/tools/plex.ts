@@ -11,6 +11,7 @@ interface PlexLibrary {
 interface PlexMetadata {
   title: string;
   type: string;
+  ratingKey?: string;
   year?: number;
   summary?: string;
   duration?: number;
@@ -19,6 +20,9 @@ interface PlexMetadata {
   grandparentTitle?: string;
   parentIndex?: number;
   index?: number;
+  viewedAt?: number;
+  accountID?: number;
+  historyKey?: string;
 }
 
 interface PlexSession {
@@ -26,12 +30,13 @@ interface PlexSession {
   type: string;
   grandparentTitle?: string;
   User?: { title: string };
-  Player?: { title: string; platform: string; state: string };
-  TranscodeSession?: { videoDecision: string; audioDecision: string; speed: number };
-  Media?: Array<{ videoCodec: string; audioCodec: string; Part: Array<{ decision: string }> }>;
+  Player?: { title: string; platform: string; state: string; local?: boolean; relayed?: boolean };
+  Session?: { bandwidth?: number; location?: string };
+  TranscodeSession?: { videoDecision: string; audioDecision: string; speed: number; transcodeHwRequested?: boolean; transcodeHwFullPipeline?: boolean };
+  Media?: Array<{ selected?: boolean; bitrate?: number; videoResolution?: string; videoCodec: string; audioCodec: string; Part: Array<{ decision?: string; selected?: boolean }> }>;
 }
 
-function getPlexClient() {
+export function getPlexClient() {
   const url = process.env.PLEX_URL;
   const token = process.env.PLEX_TOKEN;
   if (!url || !token) throw new Error("Missing PLEX_URL or PLEX_TOKEN in .env");
@@ -51,11 +56,11 @@ function formatDuration(ms: number): string {
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 export const PlexSearchSchema = z.object({
-  query: z.string().describe("Search query"),
+  query: z.string().trim().min(1).max(200).describe("Search query"),
 });
 
 export const PlexRecentlyAddedSchema = z.object({
-  limit: z.number().optional().default(20).describe("Number of items to return (default 20)"),
+  limit: z.number().int().min(1).max(100).optional().default(20).describe("Number of items to return (1-100, default 20)"),
 });
 
 export const PlexRefreshLibrarySchema = z.object({
@@ -67,8 +72,9 @@ export const PlexDeleteMediaSchema = z.object({
 });
 
 export const PlexWatchHistorySchema = z.object({
-  limit: z.number().optional().default(20).describe("Number of history entries to return (default 20)"),
-  account_id: z.number().optional().describe("Filter by Plex account ID (omit for all users)"),
+  limit: z.number().int().min(1).max(100).optional().default(20).describe("History page size (1-100, default 20)"),
+  offset: z.number().int().min(0).max(1_000_000).optional().default(0).describe("History page offset (default 0)"),
+  account_id: z.number().int().min(0).optional().describe("Filter by Plex account ID (omit for all users)"),
 });
 
 // ─── Implementations ──────────────────────────────────────────────────────────
@@ -85,8 +91,18 @@ export async function plexGetLibraries(): Promise<string> {
 
 export async function plexSearch(input: z.infer<typeof PlexSearchSchema>): Promise<string> {
   const http = getPlexClient();
-  const r = await http.get("/library/search", { params: { query: input.query, limit: 10 } });
-  const items: PlexMetadata[] = r.data?.MediaContainer?.Metadata ?? [];
+  const r = await http.get("/hubs/search", { params: { query: input.query, limit: 10, includeGuids: 1 } });
+  const container = r.data?.MediaContainer;
+  if (!container || !Array.isArray(container.Hub)) throw new Error("Unexpected Plex search response; results could not be verified.");
+  const seen = new Set<string>();
+  const items: PlexMetadata[] = container.Hub.flatMap((hub: { Metadata?: PlexMetadata[] }) => hub.Metadata ?? [])
+    .filter((item: PlexMetadata) => {
+      if (!["movie", "show", "season", "episode"].includes(item.type)) return false;
+      const identity = item.ratingKey ?? JSON.stringify([item.type, item.title, item.grandparentTitle, item.parentIndex, item.index]);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    }).slice(0, 30);
   if (!items.length) return `No results for "${input.query}".`;
   return items
     .map((m) => {
@@ -104,25 +120,30 @@ export async function plexGetSessions(): Promise<string> {
   const r = await http.get("/status/sessions");
   const sessions: PlexSession[] = r.data?.MediaContainer?.Metadata ?? [];
   if (!sessions.length) return "Nobody is watching anything right now.";
-  return sessions
+  const entries = sessions
     .map((s) => {
       const title = s.grandparentTitle ? `${s.grandparentTitle} — ${s.title}` : s.title;
       const user = s.User?.title ?? "Unknown";
       const player = s.Player ? `${s.Player.platform} (${s.Player.state})` : "Unknown device";
-      const transcode = s.TranscodeSession
-        ? `transcoding ${s.TranscodeSession.videoDecision}/${s.TranscodeSession.audioDecision} @ ${s.TranscodeSession.speed}x`
-        : "direct play";
-      return `${user} → ${title}\n  ${player} | ${transcode}`;
+      const media = s.Media?.find(m => m.selected) ?? s.Media?.[0];
+      const part = media?.Part?.find(p => p.selected) ?? media?.Part?.[0];
+      const t = s.TranscodeSession;
+      const transcode = t
+        ? `video=${t.videoDecision}, audio=${t.audioDecision}, speed=${t.speed ?? "unknown"}x, hardware requested=${t.transcodeHwRequested ?? "unknown"}, full hardware pipeline=${t.transcodeHwFullPipeline ?? "unknown"}`
+        : `playback=${part?.decision ?? "unknown"}`;
+      const bandwidth = s.Session?.bandwidth !== undefined ? `${s.Session.bandwidth} kbps` : "unknown";
+      return `${user} | ${title}\n  ${player} | ${transcode}\n  location=${s.Session?.location ?? "unknown"}, relayed=${s.Player?.relayed ?? "unknown"}, bandwidth=${bandwidth}, source bitrate=${media?.bitrate ?? "unknown"} kbps, resolution=${media?.videoResolution ?? "unknown"}`;
     })
     .join("\n\n");
+  return `Current streams: ${sessions.length}. This is a current snapshot, not historical peak concurrency.\n${entries}`;
 }
 
 export async function plexRecentlyAdded(
   input: z.infer<typeof PlexRecentlyAddedSchema>
 ): Promise<string> {
   const http = getPlexClient();
-  const r = await http.get("/library/recentlyAdded", { params: { "X-Plex-Container-Size": input.limit } });
-  const items: PlexMetadata[] = r.data?.MediaContainer?.Metadata ?? [];
+  const r = await http.get("/library/recentlyAdded", { headers: { "X-Plex-Container-Start": "0", "X-Plex-Container-Size": String(input.limit) } });
+  const items: PlexMetadata[] = (r.data?.MediaContainer?.Metadata ?? []).slice(0, input.limit);
   if (!items.length) return "Nothing recently added.";
   return items
     .map((m) => {
@@ -148,22 +169,34 @@ export async function plexDeleteMedia(input: z.infer<typeof PlexDeleteMediaSchem
 
 export async function plexGetWatchHistory(input: z.infer<typeof PlexWatchHistorySchema>): Promise<string> {
   const http = getPlexClient();
-  const params: Record<string, unknown> = { "X-Plex-Container-Size": input.limit };
-  if (input.account_id) params.accountID = input.account_id;
+  const params: Record<string, unknown> = { sort: "viewedAt:desc" };
+  if (input.account_id !== undefined) params.accountID = input.account_id;
 
-  const r = await http.get<{ MediaContainer: { Metadata?: PlexMetadata[] } }>(
+  const r = await http.get<{ MediaContainer: { Metadata?: PlexMetadata[]; totalSize?: number; offset?: number } }>(
     "/status/sessions/history/all",
-    { params }
+    { params, headers: { "X-Plex-Container-Start": String(input.offset), "X-Plex-Container-Size": String(input.limit) } }
   );
-  const items: PlexMetadata[] = r.data?.MediaContainer?.Metadata ?? [];
+  const container = r.data?.MediaContainer;
+  const rawItems = container?.Metadata ?? [];
+  if (rawItems.length > input.limit || (container?.offset !== undefined && container.offset !== input.offset)) {
+    throw new Error("Plex did not honor history pagination; refusing to report an inaccurate page.");
+  }
+  const items = rawItems;
   if (!items.length) return "No watch history found.";
 
-  return items.map((m) => {
+  const entries = items.map((m) => {
+    const date = m.viewedAt ? new Date(m.viewedAt * 1000).toISOString() : "unknown time";
+    const prefix = `${date} | account=${m.accountID ?? "unknown"} | `;
     if (m.type === "episode") {
-      return `[Episode] ${m.grandparentTitle} S${String(m.parentIndex ?? 0).padStart(2, "0")}E${String(m.index ?? 0).padStart(2, "0")} — ${m.title}`;
+      return `${prefix}[Episode] ${m.grandparentTitle} S${String(m.parentIndex ?? 0).padStart(2, "0")}E${String(m.index ?? 0).padStart(2, "0")} | ${m.title}`;
     }
-    return `[${m.type}] ${m.title}${m.year ? ` (${m.year})` : ""}${m.viewCount ? ` | ${m.viewCount} play(s)` : ""}`;
+    return `${prefix}[${m.type}] ${m.title}${m.year ? ` (${m.year})` : ""}`;
   }).join("\n");
+  const next = input.offset + items.length;
+  const total = container?.totalSize;
+  const hasMore = total !== undefined ? next < total : items.length === input.limit;
+  const boundReached = hasMore && next > 1_000_000;
+  return `History: returned=${items.length}, offset=${input.offset}, total=${total ?? "unknown"}, next_offset=${hasMore && !boundReached ? next : "none"}. Sorted newest first.${boundReached ? " Pagination bound reached; older history remains unread." : ""} Watch events do not provide historical session duration, concurrent streams, or transcode load.\n${entries}`;
 }
 
 export async function plexRefreshLibrary(

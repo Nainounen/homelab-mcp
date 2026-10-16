@@ -1,10 +1,27 @@
 import { ToolModule } from "../types.js";
 import * as impl from "../tools/plex.js";
+import * as sharing from "../tools/plex-sharing.js";
 
 export function plexModule(): ToolModule {
   return {
     domain: "Plex",
     tools: [
+      {
+        name: "plex_list_shares",
+        description: "List pending and accepted library shares on this Plex server. Does not return user access tokens.",
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true },
+      },
+      {
+        name: "plex_invite_user",
+        description: "Invite an email address to explicitly selected Plex library keys from plex_get_libraries. Preview by default. Downloads default off; never adds a Plex Home member. Sending requires human approval. Existing shares are left unchanged.",
+        inputSchema: { type: "object", properties: {
+          email: { type: "string", format: "email", maxLength: 254 },
+          library_keys: { type: "array", items: { type: "string", pattern: "^[0-9]+$" }, minItems: 1, maxItems: 50 },
+          allow_downloads: { type: "boolean", default: false }, preview_only: { type: "boolean", default: true },
+        }, required: ["email", "library_keys"], additionalProperties: false },
+        annotations: { readOnlyHint: false },
+      },
       {
         name: "plex_get_libraries",
         description: "List all Plex libraries (Movies, TV Shows, etc.) with item counts.",
@@ -21,7 +38,7 @@ export function plexModule(): ToolModule {
       },
       {
         name: "plex_get_sessions",
-        description: "Show who is currently streaming on Plex, what they are watching, and whether it is transcoding or direct play.",
+        description: "Inspect current Plex streams, playback decisions, hardware transcoding flags, bandwidth and local/remote location. A current snapshot does not establish historical peak concurrency.",
         inputSchema: { type: "object", properties: {}, required: [] },
       },
       {
@@ -29,7 +46,7 @@ export function plexModule(): ToolModule {
         description: "Show recently added movies and episodes in Plex.",
         inputSchema: {
           type: "object",
-          properties: { limit: { type: "number", description: "Number of items to return (default 20)" } },
+          properties: { limit: { type: "integer", minimum: 1, maximum: 100, description: "Number of items to return (default 20)" } },
         },
       },
       {
@@ -53,12 +70,13 @@ export function plexModule(): ToolModule {
       },
       {
         name: "plex_get_watch_history",
-        description: "Show recent Plex watch history across all users with titles, types, and play counts.",
+        description: "Read paginated Plex watch events, newest first, with UTC timestamps, account IDs and next offset. Works without Tautulli. Events cannot establish historical concurrent streams or transcode load.",
         inputSchema: {
           type: "object",
           properties: {
-            limit: { type: "number", description: "Number of entries to return (default 20)" },
-            account_id: { type: "number", description: "Filter by Plex account ID (optional, omit for all users)" },
+            limit: { type: "integer", minimum: 1, maximum: 100, description: "Number of entries per page (default 20)" },
+            offset: { type: "integer", minimum: 0, maximum: 1000000, description: "Page offset (default 0), use next_offset from the previous result" },
+            account_id: { type: "integer", minimum: 0, description: "Filter by Plex account ID (optional, omit for all users)" },
           },
         },
       },
@@ -66,6 +84,8 @@ export function plexModule(): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "plex_list_shares":      return sharing.plexListShares();
+        case "plex_invite_user":      return sharing.plexInviteUser(sharing.PlexInviteSchema.parse(args));
         case "plex_get_libraries":    return impl.plexGetLibraries();
         case "plex_search":           return impl.plexSearch(impl.PlexSearchSchema.parse(args));
         case "plex_get_sessions":     return impl.plexGetSessions();

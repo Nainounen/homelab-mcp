@@ -1,11 +1,19 @@
 import { ToolModule } from "../types.js";
 import { ArrClient } from "../arr.js";
+import { QueueDismissSchema, dismissQueueItem, queueDismissTool } from "../tools/queue.js";
+import { qualityProfileTools, profileDetails, saveProfile, deleteProfile, profileIdSchema, createProfileSchema, editProfileSchema, deleteProfileSchema } from "../tools/quality-profiles.js";
+import * as replacement from "../tools/radarr-replacement.js";
+import { bulkProfileTool, bulkProfileSchema, bulkSetMovieProfile } from "../tools/radarr-bulk.js";
 import * as impl from "../tools/radarr.js";
 
 export function radarrModule(client: ArrClient): ToolModule {
   return {
     domain: "Radarr",
     tools: [
+      bulkProfileTool,
+      ...replacement.replacementTools,
+      ...qualityProfileTools("radarr"),
+      queueDismissTool("radarr"),
       {
         "name": "radarr_refresh_movie",
         "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
@@ -257,7 +265,7 @@ export function radarrModule(client: ArrClient): ToolModule {
       {
         name: "radarr_interactive_search",
         description:
-          "Show available releases for a movie with their GUIDs, quality, languages, size, age, indexer ID, and custom format score. " +
+          "Show available releases for a movie with their GUIDs, quality, languages, size, age, indexer ID, custom format score and matched formats, sorted by highest profile score first. " +
           "Use this when you want to manually pick a specific release instead of letting Radarr auto-grab. " +
           "WORKFLOW: (1) Call this to browse releases. (2) Pick a release by guid. (3) Call radarr_grab_release with that guid. " +
           "For existing downloaded media, use include_rejected: true to see alternatives rejected because the current file meets the cutoff. " +
@@ -373,6 +381,18 @@ export function radarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "radarr_inspect_replacement": return replacement.inspectReplacement(client,replacement.inspectReplacementSchema.parse(args));
+        case "radarr_bulk_import_replacements": return replacement.bulkImportReplacement(client,replacement.bulkReplacementImportSchema.parse(args));
+        case "radarr_bulk_set_quality_profile": return bulkSetMovieProfile(client,bulkProfileSchema.parse(args));
+        case "radarr_list_space_savers": return replacement.listSpaceSavers(client,replacement.saverSchema.parse(args));
+        case "radarr_plan_downgrade": return replacement.planReplacement(client,replacement.planSchema.parse(args));
+        case "radarr_download_replacement": return replacement.downloadReplacement(client,replacement.replacementDownloadSchema.parse(args));
+        case "radarr_import_replacement": return replacement.importReplacement(client,replacement.replacementImportSchema.parse(args));
+        case "radarr_get_quality_profile": return profileDetails(client,profileIdSchema.parse(args));
+        case "radarr_create_quality_profile": return saveProfile(client,createProfileSchema.parse(args));
+        case "radarr_edit_quality_profile": return saveProfile(client,editProfileSchema.parse(args));
+        case "radarr_delete_quality_profile": return deleteProfile(client,"radarr",deleteProfileSchema.parse(args));
+        case "radarr_remove_queue_item": return dismissQueueItem(client, QueueDismissSchema.parse(args));
         case "radarr_refresh_movie": return impl.radarrRefreshMovie(client, impl.RadarrExistingItemSchema.parse(args));
         case "radarr_rescan_movie": return impl.radarrRescanMovie(client, impl.RadarrExistingItemSchema.parse(args));
         case "radarr_list_languages": return impl.radarrListLanguages(client);

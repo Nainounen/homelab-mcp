@@ -65,6 +65,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
+    "fast-xml-parser": "^5.11.2",
     "node-ssh": "^13.2.0",
     "zod": "^3.23.0"
   },
