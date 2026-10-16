@@ -11,7 +11,7 @@
 
 MCP server that gives AI assistants full control of a Proxmox homelab — manage VMs and containers, deploy Docker projects, monitor services, control the media stack, and check storage health, all from conversation.
 
-**65+ tools across 17 domains.** Modular architecture designed for AI-assisted extensibility.
+Tools cover infrastructure, media automation, monitoring, storage, and network services. The modular architecture lets contributors add integrations without changing the MCP server core.
 
 ## AI Setup
 
@@ -172,6 +172,7 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `radarr_list_movies` | List movies with download status (filter/search/limit) |
 | `radarr_remove_movie` | Remove a movie (optionally delete files) |
 | `radarr_get_queue` | Active movie downloads with progress |
+| `radarr_get_command` | Check the status of an asynchronous Radarr command |
 | `radarr_force_search` | Re-search indexers for a movie |
 | `radarr_get_history` | Recent download history |
 | `radarr_check_releases` | Show available releases and rejections |
@@ -180,11 +181,28 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `radarr_blocklist_release` | Blocklist a bad release and retry |
 | `radarr_list_path_mappings` | List remote path mappings |
 | `radarr_set_path_mapping` | Add/update a path mapping |
+| `radarr_interactive_search` | Search releases with rejection reasons, languages, custom formats, and scores |
+| `radarr_grab_release` | Grab one selected release by GUID and indexer ID |
+| `radarr_manual_import` | Preview and import files from a specified folder |
+| `radarr_list_custom_formats` | List custom formats and profile scores |
+| `radarr_set_custom_format` | Create or update a custom format |
+| `radarr_set_cf_score` | Set a custom format score on a quality profile |
+| `radarr_get_quality_profile` | Inspect a profile and its guarded edit digest |
+| `radarr_create_quality_profile` | Clone a profile template with selected quality and score settings |
+| `radarr_edit_quality_profile` | Update a profile with digest protection |
+| `radarr_delete_quality_profile` | Preview references before removing an unused profile |
+| `radarr_bulk_set_quality_profile` | Assign a profile to a selected batch of movies |
+| `radarr_remove_queue_item` | Dismiss one stale queue row without deleting the download |
+| `radarr_inspect_replacement` | Inspect a downloaded replacement candidate |
+| `radarr_plan_downgrade` | Find smaller release candidates and report expected savings |
+| `radarr_download_replacement` | Preview or download a selected smaller release |
+| `radarr_import_replacement` | Preview or import a selected replacement file |
 | `sonarr_search_series` | Search for a TV series by title |
 | `sonarr_add_series` | Add a series and trigger download |
 | `sonarr_list_series` | List series with episode progress (filter/search/limit) |
 | `sonarr_remove_series` | Remove a series (optionally delete files) |
 | `sonarr_get_queue` | Active episode downloads with progress |
+| `sonarr_get_command` | Check the status of an asynchronous Sonarr command |
 | `sonarr_force_search` | Re-search for missing episodes |
 | `sonarr_season_search` | Search for a specific season |
 | `sonarr_check_releases` | Show releases and rejections for a season |
@@ -193,9 +211,22 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `sonarr_clear_blocklist` | Clear the release blocklist |
 | `sonarr_list_path_mappings` | List remote path mappings |
 | `sonarr_set_path_mapping` | Add/update a path mapping |
+| `sonarr_interactive_search` | Search releases with rejection reasons, languages, custom formats, and scores |
+| `sonarr_grab_release` | Grab one selected release by GUID and indexer ID |
+| `sonarr_manual_import` | Preview and import files from a specified folder |
+| `sonarr_list_custom_formats` | List custom formats and profile scores |
+| `sonarr_set_custom_format` | Create or update a custom format |
+| `sonarr_set_cf_score` | Set a custom format score on a quality profile |
+| `sonarr_get_quality_profile` | Inspect a profile and its guarded edit digest |
+| `sonarr_create_quality_profile` | Clone a profile template with selected quality and score settings |
+| `sonarr_edit_quality_profile` | Update a profile with digest protection |
+| `sonarr_delete_quality_profile` | Preview references before removing an unused profile |
+| `sonarr_remove_queue_item` | Dismiss one stale queue row without deleting the download |
 | `sabnzbd_get_status` | Download speed, ETA, disk space, queue size |
 | `sabnzbd_list_queue` | Active NZB downloads with progress |
 | `sabnzbd_get_history` | Recent download history |
+| `sabnzbd_get_warnings` | Read active SABnzbd warnings and errors |
+| `sabnzbd_get_job` | Inspect a specific NZO ID in the queue or history, including failures and post-processing |
 | `sabnzbd_pause_queue` | Pause downloads |
 | `sabnzbd_resume_queue` | Resume downloads |
 | `sabnzbd_delete_item` | Delete a queue item by NZO ID |
@@ -217,6 +248,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | Tool | Description |
 |---|---|
 | `plex_get_libraries` | List Plex libraries with item counts |
+| `plex_list_shares` | List pending and accepted library shares |
+| `plex_invite_user` | Preview an invitation to selected libraries |
 | `plex_search` | Search across all libraries |
 | `plex_get_sessions` | Who is streaming, what, transcode/direct play |
 | `plex_recently_added` | Recently added movies and episodes |
@@ -224,6 +257,10 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `plex_delete_media` | Permanently delete by ratingKey |
 | `plex_get_watch_history` | Recent watch history across users |
 | `seerr_list_requests` | List media requests from family |
+| `seerr_get_request` | Inspect request status, availability, seasons, and linked Arr IDs |
+| `seerr_retry_request` | Preview or retry a failed request |
+| `seerr_get_quality_profile_settings` | Inspect linked Arr servers and Seerr default profiles |
+| `seerr_set_quality_profile` | Change the quality profile used for future requests |
 | `seerr_approve_request` | Approve a pending request |
 | `seerr_decline_request` | Decline a request |
 | `seerr_delete_request` | Delete a request |
@@ -232,7 +269,21 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `tautulli_get_history` | Plex watch history (Tautulli) |
 | `tautulli_get_stats` | 30-day play stats |
 | `bazarr_status` | Wanted subtitle counts |
-| `bazarr_download_subtitle` | Trigger manual subtitle download |
+| `bazarr_download_subtitle` | Preview or download a subtitle for one movie or episode |
+| `bazarr_search_wanted_movies` | Start Bazarr's wanted movie search after preview |
+| `bazarr_search_wanted_episodes` | Start Bazarr's wanted episode search after preview |
+| `bazarr_get_settings` | Inspect settings with secrets redacted |
+| `bazarr_update_settings` | Preview and patch selected settings |
+| `bazarr_set_enabled_languages` | Preview and replace enabled subtitle languages |
+| `bazarr_set_language_profiles` | Preview and replace the language profile list |
+| `bazarr_get_system_health` | Inspect Bazarr health |
+| `bazarr_get_system_tasks` | Inspect scheduled system tasks |
+| `bazarr_get_system_jobs` | Inspect background job progress |
+| `bazarr_get_providers` | Inspect subtitle provider configuration and status |
+| `bazarr_get_movies_wanted` | List movies missing subtitles |
+| `bazarr_get_episodes_wanted` | List episodes missing subtitles |
+
+Bazarr also exposes tools generated from its API schema for subtitle history, blacklist, files, providers, languages, backups, logs, and system tasks. Write operations preview by default. For write tools that return an `expected_hash`, pass that value back to apply the change against the state you reviewed.
 
 ### Media — operational
 
