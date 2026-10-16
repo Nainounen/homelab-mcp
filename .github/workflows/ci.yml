@@ -22,6 +22,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - run: npm ci
+      # npm ci can fail when optional wasm dependency versions differ from the lockfile.
+      # npm install resolves the current platform's dependency tree like the publish workflow.
+      - run: npm install
       - run: npm run build
       - run: npm test
