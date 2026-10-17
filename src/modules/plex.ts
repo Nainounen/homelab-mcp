@@ -1,3 +1,4 @@
+import * as matching from "../tools/plex-match.js";
 import { ToolModule } from "../types.js";
 import * as impl from "../tools/plex.js";
 import * as sharing from "../tools/plex-sharing.js";
@@ -6,6 +7,7 @@ export function plexModule(): ToolModule {
   return {
     domain: "Plex",
     tools: [
+      ...matching.plexMatchTools,
       {
         name: "plex_list_shares",
         description: "List pending and accepted library shares on this Plex server. Does not return user access tokens.",
@@ -84,6 +86,9 @@ export function plexModule(): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "plex_get_metadata": return matching.plexGetMetadata(matching.PlexMetadataSchema.parse(args));
+        case "plex_get_matches": return matching.plexGetMatches(matching.PlexMatchesSchema.parse(args));
+        case "plex_fix_match": return matching.plexFixMatch(matching.PlexFixMatchSchema.parse(args));
         case "plex_list_shares":      return sharing.plexListShares();
         case "plex_invite_user":      return sharing.plexInviteUser(sharing.PlexInviteSchema.parse(args));
         case "plex_get_libraries":    return impl.plexGetLibraries();

@@ -13,6 +13,7 @@ import { sonarrModule } from "./modules/sonarr.js";
 import { radarrModule } from "./modules/radarr.js";
 import { sabnzbdModule } from "./modules/sabnzbd.js";
 import { seerrModule } from "./modules/seerr.js";
+import { PlexFixMatchSchema } from "./tools/plex-match.js";
 import { plexModule } from "./modules/plex.js";
 import { redactSecrets, sanitizeError, truncateOutput } from "./utils.js";
 import { createProfileSchema, editProfileSchema, deleteProfileSchema } from "./tools/quality-profiles.js";
@@ -48,6 +49,7 @@ const readOnlyTools = new Set([
   "sabnzbd_get_warnings", "sabnzbd_list_categories", "sabnzbd_list_servers",
   "sabnzbd_get_switches", "sabnzbd_get_folders", "sabnzbd_get_general",
   "seerr_stats", "seerr_list_requests", "seerr_get_request",
+  "plex_get_metadata", "plex_get_matches",
   "plex_get_libraries", "plex_search", "plex_get_sessions", "plex_recently_added", "plex_get_watch_history", "plex_list_shares",
 ]);
 const batchActionSchemas: Record<string, z.ZodTypeAny> = {
@@ -62,7 +64,7 @@ const actionTools = new Set([
   "radarr_download_replacement", "radarr_import_replacement",
   "sonarr_create_quality_profile", "sonarr_edit_quality_profile", "radarr_create_quality_profile", "radarr_edit_quality_profile", "seerr_set_quality_profile",
   "sonarr_delete_quality_profile", "radarr_delete_quality_profile",
-  "plex_invite_user",
+  "plex_invite_user", "plex_fix_match",
   "sonarr_remove_queue_item", "radarr_remove_queue_item",
   "sonarr_refresh_series", "sonarr_rescan_series", "sonarr_set_quality_profile",
   "sonarr_grab_release", "sonarr_manual_import", "sonarr_force_search", "sonarr_season_search",
@@ -88,6 +90,7 @@ dispatch.set("media_get_monitor_status",async args => {
 });
 const newActionSchemas: Record<string, z.ZodTypeAny> = {
   ...batchActionSchemas,
+  plex_fix_match: PlexFixMatchSchema,
   ...bazarrActionSchemas,
   ...Object.fromEntries(bazarrOperations.filter(op => op.method !== "GET").map(op => [op.name, operationSchema(op)])),
   radarr_bulk_import_replacements:bulkReplacementImportSchema,
@@ -144,11 +147,17 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     if (batchPreview && batchPreview.batch_digest !== args.expected_batch_digest) {
       throw new Error("Batch changed. Preview again before requesting approval. Nothing changed.");
     }
+    const matchPreview = request.params.name === "plex_fix_match" && args.preview_only === false
+      ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : undefined;
+    if (matchPreview) {
+      if (matchPreview.match_digest !== args.expected_match_digest) throw new Error("Plex match changed. Preview again before approval. Nothing changed.");
+      if (matchPreview.already_matched) return { content: [{ type: "text", text: redactSecrets(JSON.stringify({ ...matchPreview, submitted: false })) }] };
+    }
     if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false)) {
       // Approval belongs to the authenticated MCP client, never to a model argument.
       const approval = await server.elicitInput({
         mode: "form",
-        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: batchPreview ?? (request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
+        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: matchPreview ?? batchPreview ?? (request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
         requestedSchema: { type: "object", properties: {} },
       }, { timeout: 300_000 });
       if (approval.action !== "accept") return { content: [{ type: "text", text: "Action denied or approval expired. No changes made." }], isError: true };

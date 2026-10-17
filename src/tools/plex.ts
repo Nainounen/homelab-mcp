@@ -107,10 +107,10 @@ export async function plexSearch(input: z.infer<typeof PlexSearchSchema>): Promi
   return items
     .map((m) => {
       if (m.type === "episode") {
-        return `[Episode] ${m.grandparentTitle} S${m.parentIndex?.toString().padStart(2, "0")}E${m.index?.toString().padStart(2, "0")} — ${m.title}`;
+        return `[ratingKey:${m.ratingKey ?? "unknown"}] [Episode] ${m.grandparentTitle} S${m.parentIndex?.toString().padStart(2, "0")}E${m.index?.toString().padStart(2, "0")} — ${m.title}`;
       }
       const dur = m.duration ? ` | ${formatDuration(m.duration)}` : "";
-      return `[${m.type}] ${m.title}${m.year ? ` (${m.year})` : ""}${dur}`;
+      return `[ratingKey:${m.ratingKey ?? "unknown"}] [${m.type}] ${m.title}${m.year ? ` (${m.year})` : ""}${dur}`;
     })
     .join("\n");
 }

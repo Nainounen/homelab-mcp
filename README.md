@@ -255,6 +255,9 @@ Bulk queue and history tools accept 1 to 200 explicit items. Preview first, then
 
 | Tool | Description |
 |---|---|
+| `plex_get_metadata` | Inspect one movie or show's current metadata identity and files |
+| `plex_get_matches` | Find candidate metadata matches for one movie or show |
+| `plex_fix_match` | Preview and approve a guarded metadata rematch |
 | `plex_get_libraries` | List Plex libraries with item counts |
 | `plex_list_shares` | List pending and accepted library shares |
 | `plex_invite_user` | Preview an invitation to selected libraries |
