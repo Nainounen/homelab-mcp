@@ -3,9 +3,11 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { SabnzbdClient } from "../sabnzbd.js";
 
+const sabIdPattern = /^(?:SABnzbd_nzo_[A-Za-z0-9_-]+|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$/;
+
 export const sabBatchSchema = z.object({
   items: z.array(z.object({
-    nzo_id: z.string().regex(/^SABnzbd_nzo_[A-Za-z0-9_-]+$/).max(200),
+    nzo_id: z.string().regex(sabIdPattern).max(200),
     expected_name: z.string().min(1).max(1000),
   }).strict()).min(1).max(200),
   delete_files: z.boolean().default(false),
@@ -34,12 +36,12 @@ interface SabRow {
 
 export const sabBatchTools: Tool[] = ["queue", "history"].map(source => ({
   name: source === "queue" ? "sabnzbd_delete_queue_items" : "sabnzbd_delete_history",
-  description: `Delete an explicit batch of 1 to 200 SABnzbd ${source} items by NZO ID and expected name. Preview first, then use batch_digest as expected_batch_digest. One native human approval covers this fixed batch. Files are preserved by default; delete_files=true can delete files. ${source === "history" ? "Only terminal Completed/Failed jobs are allowed. Entries are permanently removed from history, skipping Archive." : "Stops selected downloads. Does not blocklist releases in Sonarr or Radarr."}`,
+  description: `Delete an explicit batch of 1 to 200 SABnzbd ${source} items by NZO ID and expected name. Supports legacy SABnzbd_nzo_ IDs and UUID IDs. Preview first, then use batch_digest as expected_batch_digest. One native human approval covers this fixed batch. Files are preserved by default; delete_files=true can delete files. ${source === "history" ? "Only terminal Completed/Failed jobs are allowed. Entries are permanently removed from history, skipping Archive." : "Stops selected downloads. Does not blocklist releases in Sonarr or Radarr."}`,
   inputSchema: {
     type: "object", additionalProperties: false,
     properties: {
       items: { type: "array", minItems: 1, maxItems: 200, items: { type: "object", additionalProperties: false,
-        properties: { nzo_id: { type: "string", pattern: "^SABnzbd_nzo_[A-Za-z0-9_-]+$", maxLength: 200 }, expected_name: { type: "string", minLength: 1, maxLength: 1000 } }, required: ["nzo_id", "expected_name"] } },
+        properties: { nzo_id: { type: "string", pattern: sabIdPattern.source, maxLength: 200 }, expected_name: { type: "string", minLength: 1, maxLength: 1000 } }, required: ["nzo_id", "expected_name"] } },
       delete_files: { type: "boolean", default: false },
       expected_batch_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
       preview_only: { type: "boolean", default: true },
