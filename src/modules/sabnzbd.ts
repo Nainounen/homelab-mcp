@@ -1,3 +1,4 @@
+import { sabBatchTools, sabBatchSchema, deleteSabBatch } from "../tools/sabnzbd-bulk.js";
 import { z } from "zod";
 import { ToolModule } from "../types.js";
 import { SabnzbdClient } from "../sabnzbd.js";
@@ -23,6 +24,7 @@ export function sabnzbdModule(client: SabnzbdClient): ToolModule {
   return {
     domain: "SABnzbd",
     tools: ([
+      ...sabBatchTools,
       { name: "sabnzbd_get_warnings", description: "Read active SABnzbd warning and error messages.",
         inputSchema: { type: "object", properties: {} } },
       { name: "sabnzbd_get_job", description: "Inspect one exact NZO ID in queue or history, including failures, output paths and post-processing stages.",
@@ -306,6 +308,8 @@ export function sabnzbdModule(client: SabnzbdClient): ToolModule {
         }
       }
       switch (name) {
+        case "sabnzbd_delete_queue_items": return deleteSabBatch(client, "queue", sabBatchSchema.parse(args));
+        case "sabnzbd_delete_history": return deleteSabBatch(client, "history", sabBatchSchema.parse(args));
         case "sabnzbd_get_warnings": return impl.sabnzbdGetWarnings(client);
         case "sabnzbd_get_job": return impl.sabnzbdGetJob(client, impl.SabJobSchema.parse(args));
         case "sabnzbd_get_status":       return impl.sabnzbdGetStatus(client);

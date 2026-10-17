@@ -18,6 +18,8 @@ import { redactSecrets, sanitizeError, truncateOutput } from "./utils.js";
 import { createProfileSchema, editProfileSchema, deleteProfileSchema } from "./tools/quality-profiles.js";
 import { seerrProfileSchema } from "./tools/seerr-profiles.js";
 import { replacementDownloadSchema, replacementImportSchema, bulkReplacementImportSchema } from "./tools/radarr-replacement.js";
+import { queueBatchSchema } from "./tools/queue-bulk.js";
+import { sabBatchSchema } from "./tools/sabnzbd-bulk.js";
 import { bulkProfileSchema } from "./tools/radarr-bulk.js";
 import { createBazarrClient } from "./bazarr.js";
 import { bazarrModule, bazarrTools, bazarrActionSchemas } from "./modules/bazarr.js";
@@ -48,7 +50,13 @@ const readOnlyTools = new Set([
   "seerr_stats", "seerr_list_requests", "seerr_get_request",
   "plex_get_libraries", "plex_search", "plex_get_sessions", "plex_recently_added", "plex_get_watch_history", "plex_list_shares",
 ]);
+const batchActionSchemas: Record<string, z.ZodTypeAny> = {
+  sonarr_remove_queue_items: queueBatchSchema, sonarr_blocklist_releases: queueBatchSchema,
+  radarr_remove_queue_items: queueBatchSchema, radarr_blocklist_releases: queueBatchSchema,
+  sabnzbd_delete_queue_items: sabBatchSchema, sabnzbd_delete_history: sabBatchSchema,
+};
 const actionTools = new Set([
+  ...Object.keys(batchActionSchemas),
   "radarr_bulk_import_replacements",
   "radarr_bulk_set_quality_profile",
   "radarr_download_replacement", "radarr_import_replacement",
@@ -79,6 +87,7 @@ dispatch.set("media_get_monitor_status",async args => {
   return JSON.stringify(JSON.parse(await fs.readFile(file,"utf8")));
 });
 const newActionSchemas: Record<string, z.ZodTypeAny> = {
+  ...batchActionSchemas,
   ...bazarrActionSchemas,
   ...Object.fromEntries(bazarrOperations.filter(op => op.method !== "GET").map(op => [op.name, operationSchema(op)])),
   radarr_bulk_import_replacements:bulkReplacementImportSchema,
@@ -130,11 +139,16 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     if (hasPreview && args.preview_only !== undefined && typeof args.preview_only !== "boolean") {
       throw new Error("preview_only must be a boolean.");
     }
+    const batchPreview = batchActionSchemas[request.params.name] && args.preview_only === false
+      ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : undefined;
+    if (batchPreview && batchPreview.batch_digest !== args.expected_batch_digest) {
+      throw new Error("Batch changed. Preview again before requesting approval. Nothing changed.");
+    }
     if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false)) {
       // Approval belongs to the authenticated MCP client, never to a model argument.
       const approval = await server.elicitInput({
         mode: "form",
-        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args })),
+        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: batchPreview ?? (request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
         requestedSchema: { type: "object", properties: {} },
       }, { timeout: 300_000 });
       if (approval.action !== "accept") return { content: [{ type: "text", text: "Action denied or approval expired. No changes made." }], isError: true };

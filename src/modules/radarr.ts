@@ -1,3 +1,4 @@
+import { queueBatchTools, queueBatchSchema, processQueueBatch } from "../tools/queue-bulk.js";
 import { ToolModule } from "../types.js";
 import { ArrClient } from "../arr.js";
 import { QueueDismissSchema, dismissQueueItem, queueDismissTool } from "../tools/queue.js";
@@ -14,6 +15,7 @@ export function radarrModule(client: ArrClient): ToolModule {
       ...replacement.replacementTools,
       ...qualityProfileTools("radarr"),
       queueDismissTool("radarr"),
+      ...queueBatchTools("radarr"),
       {
         "name": "radarr_refresh_movie",
         "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
@@ -381,6 +383,8 @@ export function radarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "radarr_remove_queue_items": return processQueueBatch(client, "radarr", false, queueBatchSchema.parse(args));
+        case "radarr_blocklist_releases": return processQueueBatch(client, "radarr", true, queueBatchSchema.parse(args));
         case "radarr_inspect_replacement": return replacement.inspectReplacement(client,replacement.inspectReplacementSchema.parse(args));
         case "radarr_bulk_import_replacements": return replacement.bulkImportReplacement(client,replacement.bulkReplacementImportSchema.parse(args));
         case "radarr_bulk_set_quality_profile": return bulkSetMovieProfile(client,bulkProfileSchema.parse(args));

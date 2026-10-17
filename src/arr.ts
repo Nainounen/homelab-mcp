@@ -49,6 +49,10 @@ export class ArrClient {
   async deleteWithBody(path: string, body: unknown, params?: Record<string, unknown>): Promise<void> {
     await withRetry(() => this.http.delete(path, { data: body, params }));
   }
+
+  async deleteWithBodyOnce(path: string, body: unknown, params?: Record<string, unknown>): Promise<void> {
+    await this.http.delete(path, { data: body, params });
+  }
 }
 
 export async function getArrRecords<T>(client: ArrClient, endpoint: string): Promise<T[]> {

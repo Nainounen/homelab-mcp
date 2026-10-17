@@ -1,3 +1,4 @@
+import { queueBatchTools, queueBatchSchema, processQueueBatch } from "../tools/queue-bulk.js";
 import { ToolModule } from "../types.js";
 import { ArrClient } from "../arr.js";
 import { QueueDismissSchema, dismissQueueItem, queueDismissTool } from "../tools/queue.js";
@@ -10,6 +11,7 @@ export function sonarrModule(client: ArrClient): ToolModule {
     tools: [
       ...qualityProfileTools("sonarr"),
       queueDismissTool("sonarr"),
+      ...queueBatchTools("sonarr"),
       {
         "name": "sonarr_refresh_series",
         "description": "Refresh metadata and run the service-configured file scan. Preview by default; returns a command ID when applied. Does not submit a download search.",
@@ -445,6 +447,8 @@ export function sonarrModule(client: ArrClient): ToolModule {
 
     async handle(name, args) {
       switch (name) {
+        case "sonarr_remove_queue_items": return processQueueBatch(client, "sonarr", false, queueBatchSchema.parse(args));
+        case "sonarr_blocklist_releases": return processQueueBatch(client, "sonarr", true, queueBatchSchema.parse(args));
         case "sonarr_get_quality_profile": return profileDetails(client,profileIdSchema.parse(args));
         case "sonarr_create_quality_profile": return saveProfile(client,createProfileSchema.parse(args));
         case "sonarr_edit_quality_profile": return saveProfile(client,editProfileSchema.parse(args));

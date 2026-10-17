@@ -193,6 +193,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `radarr_delete_quality_profile` | Preview references before removing an unused profile |
 | `radarr_bulk_set_quality_profile` | Assign a profile to a selected batch of movies |
 | `radarr_remove_queue_item` | Dismiss one stale queue row without deleting the download |
+| `radarr_remove_queue_items` | Preview and dismiss an explicit batch of queue rows |
+| `radarr_blocklist_releases` | Preview and blocklist an explicit batch of tracked queue releases |
 | `radarr_inspect_replacement` | Inspect a downloaded replacement candidate |
 | `radarr_plan_downgrade` | Find smaller release candidates and report expected savings |
 | `radarr_download_replacement` | Preview or download a selected smaller release |
@@ -222,6 +224,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `sonarr_edit_quality_profile` | Update a profile with digest protection |
 | `sonarr_delete_quality_profile` | Preview references before removing an unused profile |
 | `sonarr_remove_queue_item` | Dismiss one stale queue row without deleting the download |
+| `sonarr_remove_queue_items` | Preview and dismiss an explicit batch of queue rows |
+| `sonarr_blocklist_releases` | Preview and blocklist an explicit batch of tracked queue releases |
 | `sabnzbd_get_status` | Download speed, ETA, disk space, queue size |
 | `sabnzbd_list_queue` | Active NZB downloads with progress |
 | `sabnzbd_get_history` | Recent download history |
@@ -230,6 +234,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `sabnzbd_pause_queue` | Pause downloads |
 | `sabnzbd_resume_queue` | Resume downloads |
 | `sabnzbd_delete_item` | Delete a queue item by NZO ID |
+| `sabnzbd_delete_queue_items` | Preview and delete selected queue jobs by NZO ID and expected name |
+| `sabnzbd_delete_history` | Preview and permanently delete selected terminal history entries |
 | `prowlarr_list_indexers` | List indexers with status |
 | `prowlarr_sync_apps` | Sync indexers to Radarr/Sonarr |
 | `prowlarr_test_indexers` | Test all (or one) indexer |
@@ -242,6 +248,8 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `readarr_add_book` | Add a book to Readarr |
 | `readarr_list_books` | List all books |
 | `readarr_get_queue` | Active book downloads |
+
+Bulk queue and history tools accept 1 to 200 explicit items. Preview first, then pass the returned `batch_digest` as `expected_batch_digest` with `preview_only: false`. The restricted media server requests one native human approval for that batch and rechecks it before applying. Files and replacement searches are preserved or disabled by default. Sonarr and Radarr batches must include every queue row sharing a selected download ID; blocklisting requires a currently tracked release. SABnzbd history deletion skips Archive and accepts only Completed or Failed entries. Results report whether each row disappeared; this does not establish media availability or confirm file deletion. After an uncertain write, inspect current state before retrying.
 
 ### Media — Plex & requests
 
