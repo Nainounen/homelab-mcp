@@ -3,7 +3,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { SabnzbdClient } from "../sabnzbd.js";
 
-const sabIdPattern = /^(?:SABnzbd_nzo_[A-Za-z0-9_-]+|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$/;
+export const sabIdPattern = /^(?:SABnzbd_nzo_[A-Za-z0-9_-]+|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$/;
 
 export const sabBatchSchema = z.object({
   items: z.array(z.object({
@@ -22,7 +22,7 @@ export const sabBatchSchema = z.object({
   }
 });
 
-interface SabRow {
+export interface SabRow {
   nzo_id: string;
   filename?: string;
   name?: string;
@@ -36,7 +36,7 @@ interface SabRow {
 
 export const sabBatchTools: Tool[] = ["queue", "history"].map(source => ({
   name: source === "queue" ? "sabnzbd_delete_queue_items" : "sabnzbd_delete_history",
-  description: `Delete an explicit batch of 1 to 200 SABnzbd ${source} items by NZO ID and expected name. Supports legacy SABnzbd_nzo_ IDs and UUID IDs. Preview first, then use batch_digest as expected_batch_digest. One native human approval covers this fixed batch. Files are preserved by default; delete_files=true can delete files. ${source === "history" ? "Only terminal Completed/Failed jobs are allowed. Entries are permanently removed from history, skipping Archive." : "Stops selected downloads. Does not blocklist releases in Sonarr or Radarr."}`,
+  description: `Delete an explicit batch of 1 to 200 SABnzbd ${source} items by NZO ID and expected name. Supports legacy SABnzbd_nzo_ IDs and UUID IDs. Preview first, then use batch_digest as expected_batch_digest. One native human approval covers this fixed batch, processed internally in chunks of 10 with up to 90 seconds per write. Queue jobs already absent are skipped; renamed jobs are refused. Files are preserved by default; delete_files=true can delete files. ${source === "history" ? "Only terminal Completed/Failed jobs are allowed. Entries are permanently removed from history, skipping Archive." : "Stops selected downloads. Does not blocklist releases in Sonarr or Radarr."}`,
   inputSchema: {
     type: "object", additionalProperties: false,
     properties: {
@@ -49,47 +49,100 @@ export const sabBatchTools: Tool[] = ["queue", "history"].map(source => ({
   }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
 }));
 
-async function readRows(client: SabnzbdClient, source: "queue" | "history", ids: string[]): Promise<SabRow[]> {
+export async function readSabRows(client: SabnzbdClient, source: "queue" | "history", ids: string[]): Promise<SabRow[]> {
   const response = await client.api<{ queue?: { slots: SabRow[] }; history?: { slots: SabRow[] } }>(source, {
     nzo_ids: ids.join(","), start: "0", limit: String(ids.length), ...(source === "history" ? { archive: "0" } : {}),
   });
   const rows = response[source]?.slots;
   if (!Array.isArray(rows)) throw new Error("SABnzbd returned an invalid list. Current state cannot be verified.");
+  if (rows.some(row => !ids.includes(row.nzo_id)) || new Set(rows.map(row => row.nzo_id)).size !== rows.length) {
+    throw new Error("SABnzbd returned unexpected IDs. Current state cannot be verified.");
+  }
   return rows;
 }
 
 export async function deleteSabBatch(client: SabnzbdClient, source: "queue" | "history", input: z.infer<typeof sabBatchSchema>): Promise<string> {
   const ids = input.items.map(item => item.nzo_id);
-  const rows = await readRows(client, source, ids);
+  const rows = await readSabRows(client, source, ids);
   const selected = input.items.map(request => {
     const row = rows.find(item => item.nzo_id === request.nzo_id);
-    if (!row || (source === "queue" ? row.filename : row.name) !== request.expected_name) {
+    if ((!row && source === "history") || (row && (source === "queue" ? row.filename : row.name) !== request.expected_name)) {
       throw new Error(`SABnzbd item ${request.nzo_id} is missing or renamed. Inspect current ${source} and preview again. Nothing changed.`);
     }
-    if (source === "history" && !["Completed", "Failed"].includes(row.status)) {
+    if (source === "history" && !["Completed", "Failed"].includes(row!.status)) {
       throw new Error(`SABnzbd item ${request.nzo_id} is still processing. Only terminal history entries may be deleted. Nothing changed.`);
     }
-    return { nzo_id: row.nzo_id, name: request.expected_name, category: row.cat ?? row.category,
-      ...(source === "history" ? { status: row.status, storage: row.storage, path: row.path, completed: row.completed } : {}) };
+    return { nzo_id: request.nzo_id, name: request.expected_name,
+      ...(source === "history" ? { category: row!.cat ?? row!.category, status: row!.status, storage: row!.storage, path: row!.path, completed: row!.completed } : {}) };
   }).sort((a, b) => a.nzo_id.localeCompare(b.nzo_id));
   const batch = { source, items: selected, delete_files: input.delete_files };
   const digest = createHash("sha256").update(JSON.stringify(batch)).digest("hex");
   const preview = { ...batch, preview: input.preview_only, batch_digest: digest };
   if (input.preview_only) return JSON.stringify(preview);
   if (input.expected_batch_digest !== digest) throw new Error("Batch identity or options changed. Preview again before approval. Nothing changed.");
+  return JSON.stringify({ ...preview, ...await deleteSabSelection(client, source, selected, input.delete_files, source === "queue") });
+}
+
+export async function deleteSabSelection(
+  client: SabnzbdClient, source: "queue" | "history", selected: Array<{ nzo_id: string; name: string }>,
+  deleteFiles: boolean, allowMissing = false, requirePaused = false,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 180_000;
+  const results: Array<{ nzo_id: string; outcome: string }> = [];
+  let submitted = false;
   let writeConfirmed = true;
-  try {
-    await client.api(source, { name: "delete", value: selected.map(item => item.nzo_id).join(","),
-      del_files: input.delete_files ? "1" : "0", ...(source === "history" ? { archive: "0" } : {}) });
-  } catch {
-    writeConfirmed = false;
+  let stoppedReason: string | undefined;
+  for (let offset = 0; offset < selected.length; offset += 10) {
+    if (Date.now() >= deadline - 15_000) { stoppedReason = "Operation time budget reached; remaining jobs were not submitted."; break; }
+    const chunk = selected.slice(offset, offset + 10);
+    const ids = chunk.map(item => item.nzo_id);
+    let rows: SabRow[];
+    try {
+      if (requirePaused) {
+        const status = await client.api<{ queue: { paused: boolean } }>("queue", { limit: "1" });
+        if (status.queue?.paused !== true) throw new Error("Queue must remain globally paused. Pause it before applying this snapshot.");
+      }
+      rows = await readSabRows(client, source, ids);
+      for (const item of chunk) {
+        const row = rows.find(row => row.nzo_id === item.nzo_id);
+        if ((!row && !allowMissing) || (row && (source === "queue" ? row.filename : row.name) !== item.name)
+          || (row && source === "history" && !["Completed", "Failed"].includes(row.status))) {
+          throw new Error("Job identity or terminal status changed. Remaining jobs were not submitted.");
+        }
+      }
+    } catch (error) { stoppedReason = error instanceof Error ? error.message : "Preflight unavailable."; break; }
+    const active = chunk.filter(item => rows.some(row => row.nzo_id === item.nzo_id));
+    results.push(...chunk.filter(item => !active.includes(item)).map(item => ({ nzo_id: item.nzo_id, outcome: "already_absent" })));
+    if (!active.length) continue;
+    submitted = true;
+    let confirmed = true;
+    try {
+      await client.api(source, { name: "delete", value: active.map(item => item.nzo_id).join(","),
+        del_files: deleteFiles ? "1" : "0", ...(source === "history" ? { archive: "0" } : {}) },
+      Math.min(90_000, Math.max(1000, deadline - Date.now() - 15_000)));
+    } catch { confirmed = false; writeConfirmed = false; }
+    let remaining: SabRow[];
+    try { remaining = await readSabRows(client, source, active.map(item => item.nzo_id)); }
+    catch {
+      results.push(...active.map(item => ({ nzo_id: item.nzo_id, outcome: "unknown" })));
+      stoppedReason = "Deletion outcome could not be verified. No automatic retry was made.";
+      break;
+    }
+    for (const item of active) {
+      const present = remaining.some(row => row.nzo_id === item.nzo_id);
+      results.push({ nzo_id: item.nzo_id, outcome: present ? (confirmed ? "still_present" : "uncertain_still_present") : "removed" });
+    }
+    if (!confirmed || remaining.length) {
+      stoppedReason = "Delete was incomplete or uncertain and may still be running. Inspect current state before another approval; no automatic retry was made.";
+      break;
+    }
   }
-  let remaining: SabRow[];
-  try { remaining = await readRows(client, source, ids); } catch {
-    return JSON.stringify({ ...preview, submitted: true, write_confirmed: writeConfirmed, verification_available: false,
-      note: "Some or all changes may have applied. Inspect current state before retrying; no automatic retry was made." });
-  }
-  return JSON.stringify({ ...preview, submitted: true, write_confirmed: writeConfirmed, verification_available: true,
-    results: selected.map(item => ({ ...item, entry_removed: !remaining.some(row => row.nzo_id === item.nzo_id) })),
-    files_verified: false, note: "Entry removal does not verify file deletion or library availability. Inspect current state before retrying uncertain results." });
+  const processed = new Set(results.map(item => item.nzo_id));
+  const removed = results.filter(item => item.outcome === "removed").length;
+  const absent = results.filter(item => item.outcome === "already_absent").length;
+  return { submitted, write_confirmed: writeConfirmed, complete: !stoppedReason && removed + absent === selected.length,
+    requested_count: selected.length, removed_count: removed, already_absent_count: absent,
+    unsubmitted_count: selected.length - processed.size, stopped_reason: stoppedReason,
+    results, files_verified: false,
+    note: "Entry removal does not prove file deletion, library availability or blocklisting. A timeout is not an API batch-size limit. New jobs are never included automatically." };
 }

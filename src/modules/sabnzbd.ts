@@ -1,4 +1,5 @@
 import { sabBatchTools, sabBatchSchema, deleteSabBatch } from "../tools/sabnzbd-bulk.js";
+import { sabClearQueueTool, sabClearQueueSchema, clearSabQueue } from "../tools/sabnzbd-clear.js";
 import { z } from "zod";
 import { ToolModule } from "../types.js";
 import { SabnzbdClient } from "../sabnzbd.js";
@@ -25,6 +26,7 @@ export function sabnzbdModule(client: SabnzbdClient): ToolModule {
     domain: "SABnzbd",
     tools: ([
       ...sabBatchTools,
+      sabClearQueueTool,
       { name: "sabnzbd_get_warnings", description: "Read active SABnzbd warning and error messages.",
         inputSchema: { type: "object", properties: {} } },
       { name: "sabnzbd_get_job", description: "Inspect one exact NZO ID in queue or history, including failures, output paths and post-processing stages.",
@@ -308,6 +310,7 @@ export function sabnzbdModule(client: SabnzbdClient): ToolModule {
         }
       }
       switch (name) {
+        case "sabnzbd_clear_queue": return clearSabQueue(client, sabClearQueueSchema.parse(args));
         case "sabnzbd_delete_queue_items": return deleteSabBatch(client, "queue", sabBatchSchema.parse(args));
         case "sabnzbd_delete_history": return deleteSabBatch(client, "history", sabBatchSchema.parse(args));
         case "sabnzbd_get_warnings": return impl.sabnzbdGetWarnings(client);

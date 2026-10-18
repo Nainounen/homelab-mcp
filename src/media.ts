@@ -21,6 +21,7 @@ import { seerrProfileSchema } from "./tools/seerr-profiles.js";
 import { replacementDownloadSchema, replacementImportSchema, bulkReplacementImportSchema } from "./tools/radarr-replacement.js";
 import { queueBatchSchema } from "./tools/queue-bulk.js";
 import { sabBatchSchema } from "./tools/sabnzbd-bulk.js";
+import { sabClearQueueSchema } from "./tools/sabnzbd-clear.js";
 import { bulkProfileSchema } from "./tools/radarr-bulk.js";
 import { createBazarrClient } from "./bazarr.js";
 import { bazarrModule, bazarrTools, bazarrActionSchemas } from "./modules/bazarr.js";
@@ -56,6 +57,7 @@ const batchActionSchemas: Record<string, z.ZodTypeAny> = {
   sonarr_remove_queue_items: queueBatchSchema, sonarr_blocklist_releases: queueBatchSchema,
   radarr_remove_queue_items: queueBatchSchema, radarr_blocklist_releases: queueBatchSchema,
   sabnzbd_delete_queue_items: sabBatchSchema, sabnzbd_delete_history: sabBatchSchema,
+  sabnzbd_clear_queue: sabClearQueueSchema,
 };
 const actionTools = new Set([
   ...Object.keys(batchActionSchemas),

@@ -12,9 +12,9 @@ export class SabnzbdClient {
     this.http = axios.create({ baseURL: baseUrl.replace(/\/+$/, "").replace(/\/api$/, ""), httpAgent: keepAliveAgent, timeout: 15_000 });
   }
 
-  async api<T>(mode: string, extra?: Record<string, string>): Promise<T> {
+  async api<T>(mode: string, extra?: Record<string, string>, timeoutMs?: number): Promise<T> {
     const params = { output: "json", apikey: this.apiKey, mode, ...extra };
-    const r = await this.http.get<T>("/api", { params });
+    const r = await this.http.get<T>("/api", { params, ...(timeoutMs ? { timeout: timeoutMs } : {}) });
     const result = r.data as { status?: boolean; error?: string };
     if (result?.status === false || result?.error) {
       throw new Error(`SABnzbd rejected ${mode}: ${result.error || "operation failed"}`);
