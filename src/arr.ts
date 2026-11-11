@@ -3,6 +3,37 @@ import http from "http";
 import https from "https";
 import { bytes, withRetry } from "./utils.js";
 
+const NEVER_SENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+function requestNeverSent(err: unknown): boolean {
+  return axios.isAxiosError(err) && !err.response && NEVER_SENT_CODES.has(err.code ?? "");
+}
+
+export class WriteOutcomeUnknownError extends Error {
+  readonly cause: unknown;
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = "WriteOutcomeUnknownError";
+    this.cause = cause;
+  }
+}
+
+// A 4xx answer or a refused connection is a definite failure. A timeout, a dropped connection or a
+// 5xx answer leaves the outcome unknown: the server may have applied the write.
+export function toWriteError(method: string, path: string, err: unknown): unknown {
+  if (!axios.isAxiosError(err)) return err;
+  const status = err.response?.status;
+  if (status !== undefined && status < 500) return err;
+  if (requestNeverSent(err)) return err;
+  const reason = status !== undefined ? `HTTP ${status}` : (err.code ?? "no response");
+  const endpoint = path.split("?")[0];
+  return new WriteOutcomeUnknownError(
+    `${method} ${endpoint} outcome unknown (${reason}). The change may have been applied. ` +
+    "Read the current state (queue, history, command list or the edited object) before any retry; do not resubmit blindly.",
+    err,
+  );
+}
+
 const keepAliveAgent = new http.Agent({ keepAlive: true });
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
 
@@ -20,13 +51,24 @@ export class ArrClient {
   }
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
+    if (path === "/release") {
+      // Anime searches can take several minutes; retrying starts another search.
+      const r = await this.http.get<T>(path, { params, timeout: 270_000 });
+      return r.data;
+    }
     const r = await withRetry(() => this.http.get<T>(path, { params }));
     return r.data;
   }
 
+  // Writes are not idempotent (grabs, commands, imports, creates), so a failure after the request may
+  // have reached the server must never be retried. Only errors that prove nothing was sent are retried.
   async post<T>(path: string, data?: unknown): Promise<T> {
-    const r = await withRetry(() => this.http.post<T>(path, data));
-    return r.data;
+    try {
+      const r = await withRetry(() => this.http.post<T>(path, data), { shouldRetry: requestNeverSent });
+      return r.data;
+    } catch (err) {
+      throw toWriteError("POST", path, err);
+    }
   }
 
   async postOnce<T>(path: string, data?: unknown, timeoutMs?: number): Promise<T> { return (await this.http.post<T>(path,data,timeoutMs ? {timeout:timeoutMs} : undefined)).data; }

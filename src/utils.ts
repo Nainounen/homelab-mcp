@@ -53,11 +53,12 @@ function isRetryable(err: unknown): boolean {
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  options?: { retries?: number; baseDelay?: number }
+  options?: { retries?: number; baseDelay?: number; shouldRetry?: (err: unknown) => boolean }
 ): Promise<T> {
   const envRetries = process.env.HTTP_RETRIES;
   const maxRetries = envRetries !== undefined ? parseInt(envRetries, 10) || 0 : (options?.retries ?? 3);
   const baseDelay = options?.baseDelay ?? 500;
+  const shouldRetry = options?.shouldRetry ?? isRetryable;
 
   let lastErr: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -65,7 +66,7 @@ export async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (attempt < maxRetries && isRetryable(err)) {
+      if (attempt < maxRetries && shouldRetry(err)) {
         const delay = baseDelay * Math.pow(2, attempt);
         await new Promise((r) => setTimeout(r, delay));
       } else {
