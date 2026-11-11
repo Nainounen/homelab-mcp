@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ArrClient, ArrCommand, ArrMediaFile, ArrLanguage, describeArrFile, filterArrLanguages, getArrRecords, listArrLanguages, listArrQualityProfiles, submitArrCommand } from "../arr.js";
-import { bytes, getFirstQualityProfileId, QualityProfile } from "../utils.js";
+import { bytes, QualityProfile } from "../utils.js";
 
 interface RadarrMovie {
   id: number;
@@ -45,9 +45,16 @@ export const RadarrSearchSchema = z.object({
 });
 
 export const RadarrAddMovieSchema = z.object({
-  tmdb_id: z.number().optional().describe("TMDB ID (from radarr_search_movie)"),
-  title: z.string().optional().describe("Movie title — used to auto-lookup if tmdb_id not provided"),
-  quality_profile: z.string().optional().describe("Quality profile name (default: first available)"),
+  tmdb_id: z.number().int().positive().optional().describe("Exact TMDB ID; required when applying"),
+  title: z.string().trim().min(1).optional().describe("Title lookup for preview only; choose an exact TMDB ID before applying"),
+  quality_profile: z.string().trim().min(1).optional().describe("Quality profile name (default: Any or first available)"),
+  monitored: z.boolean().default(false),
+  search_for_movie: z.boolean().default(false),
+  preview_only: z.boolean().default(true),
+}).strict().superRefine((input, ctx) => {
+  if (!input.tmdb_id && !input.title) ctx.addIssue({ code: "custom", message: "Provide tmdb_id or title" });
+  if (!input.preview_only && !input.tmdb_id) ctx.addIssue({ code: "custom", message: "Choose an exact tmdb_id before applying" });
+  if (!input.monitored && input.search_for_movie) ctx.addIssue({ code: "custom", message: "An unmonitored addition cannot start an automatic search" });
 });
 
 export const RadarrRemoveMovieSchema = z.object({
@@ -97,51 +104,60 @@ export async function radarrAddMovie(
   client: ArrClient,
   input: z.infer<typeof RadarrAddMovieSchema>
 ): Promise<string> {
-  let tmdbId = input.tmdb_id;
-
+  const tmdbId = input.tmdb_id;
   if (!tmdbId) {
-    if (!input.title) throw new Error("Provide either tmdb_id or title");
     const results = await client.get<RadarrMovie[]>("/movie/lookup", { term: input.title });
-    if (!results.length) return `No results found for "${input.title}"`;
-    tmdbId = results[0].tmdbId;
+    return JSON.stringify({ preview: true, submitted: false, message: "Choose an exact tmdb_id, then preview again before applying.", candidates: results.slice(0, 8).map(m => ({ tmdb_id: m.tmdbId, title: m.title, year: m.year })) });
   }
 
-  // Check if already in library
   const already = await getMovieByTmdbId(client, tmdbId);
-  if (already) return `"${already.title}" is already in your Radarr library (${already.hasFile ? "downloaded" : "not yet downloaded"}).`;
-
-  // Get quality profile
-  const profiles = await client.get<QualityProfile[]>("/qualityprofile");
-  let profileId: number;
-  if (input.quality_profile) {
-    const match = profiles.find(
-      (p) => p.name.toLowerCase() === input.quality_profile!.toLowerCase()
-    );
-    if (!match) throw new Error(`Quality profile "${input.quality_profile}" not found. Available: ${profiles.map((p) => p.name).join(", ")}`);
-    profileId = match.id;
-  } else {
-    profileId = await getFirstQualityProfileId(client, "Radarr");
+  if (already) {
+    return JSON.stringify({ preview: input.preview_only, submitted: false, already_exists: true, tmdb_id: tmdbId, title: already.title, movie_id: already.id, monitored: already.monitored, has_file: already.hasFile, message: "Already in the library; existing settings were left unchanged." });
   }
 
-  const rootFolder = process.env.RADARR_ROOT_FOLDER;
-  if (!rootFolder) throw new Error("RADARR_ROOT_FOLDER is not set in .env");
+  const profiles = await client.get<QualityProfile[]>("/qualityprofile");
+  const profile = input.quality_profile
+    ? profiles.find(p => p.name.toLowerCase() === input.quality_profile!.toLowerCase())
+    : profiles.find(p => p.name.toLowerCase() === "any") ?? profiles[0];
+  if (!profile) throw new Error("No matching Radarr quality profile. Use radarr_list_quality_profiles.");
 
-  // Lookup movie details
-  const lookup = await client.get<RadarrMovie[]>("/movie/lookup", { term: `tmdb:${tmdbId}` });
-  if (!lookup.length) throw new Error(`Movie with tmdbId ${tmdbId} not found`);
-  const movie = lookup[0];
+  const roots = await client.get<Array<{ path: string }>>("/rootfolder");
+  const rootFolder = process.env.RADARR_ROOT_FOLDER ?? (roots.length === 1 ? roots[0].path : undefined);
+  if (!rootFolder) throw new Error("Set RADARR_ROOT_FOLDER to choose between Radarr root folders before adding a movie");
+  if (!roots.some(root => root.path === rootFolder)) throw new Error("Configured RADARR_ROOT_FOLDER is not a Radarr root folder");
 
-  await client.post<RadarrMovie>("/movie", {
-    title: movie.title,
-    tmdbId: movie.tmdbId,
-    qualityProfileId: profileId,
-    rootFolderPath: rootFolder,
-    monitored: true,
-    minimumAvailability: "announced",
-    addOptions: { searchForMovie: true },
-  });
+  const lookup = await client.get<Array<RadarrMovie & { titleSlug?: string; images?: unknown[] }>>("/movie/lookup", { term: `tmdb:${tmdbId}` });
+  const movie = lookup.find(m => m.tmdbId === tmdbId);
+  if (!movie) throw new Error(`Movie with tmdbId ${tmdbId} not found`);
+  const preview = {
+    preview: true, submitted: false, tmdb_id: tmdbId, title: movie.title, year: movie.year,
+    quality_profile: profile.name, quality_profile_id: profile.id, root_folder: rootFolder,
+    monitored: input.monitored, search_for_movie: input.search_for_movie,
+    future_automatic_downloads_possible: input.monitored,
+  };
+  if (input.preview_only) return JSON.stringify(preview);
 
-  return `Added "${movie.title}" (${movie.year}) to Radarr — searching for a download now.`;
+  try {
+    await client.postOnce<RadarrMovie>("/movie", {
+      title: movie.title,
+      tmdbId: movie.tmdbId,
+      year: movie.year,
+      titleSlug: movie.titleSlug,
+      images: movie.images ?? [],
+      qualityProfileId: profile.id,
+      rootFolderPath: rootFolder,
+      monitored: input.monitored,
+      minimumAvailability: "released",
+      addOptions: { searchForMovie: input.search_for_movie, monitor: input.monitored ? "movieOnly" : "none" },
+    });
+  } catch {
+    throw new Error("Radarr add response was unsuccessful or uncertain. Inspect radarr_list_movies before retrying; the movie may have been added.");
+  }
+  const saved = await getMovieByTmdbId(client, tmdbId);
+  if (!saved || saved.monitored !== input.monitored || saved.qualityProfileId !== profile.id) {
+    throw new Error("Radarr accepted the add, but library verification did not match. Inspect radarr_list_movies before any retry.");
+  }
+  return JSON.stringify({ ...preview, preview: false, submitted: true, verified: true, movie_id: saved.id });
 }
 
 export async function radarrListMovies(
@@ -586,7 +602,7 @@ export async function radarrGrabRelease(
   if (release.rejections?.length && !input.allow_rejected) throw new Error(`Release rejected: ${warnings}. Review these reasons and obtain human approval before setting allow_rejected: true.`);
   await client.post("/release", release);
   const q = release.quality?.quality?.name ?? "?";
-  return `Grabbing "${release.title}" [${q}] — check radarr_get_queue to monitor progress.`;
+  return `Grab submitted for "${release.title}" [${q}]. Not confirmed yet: check radarr_get_queue or radarr_get_history before reporting it as downloading.`;
 }
 
 // ─── Manual import ────────────────────────────────────────────────────────────

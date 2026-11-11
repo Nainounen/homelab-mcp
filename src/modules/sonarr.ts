@@ -198,20 +198,25 @@ export function sonarrModule(client: ArrClient): ToolModule {
       },
       {
         name: "sonarr_add_series",
-        description: "Add a TV series to Sonarr and trigger an automatic episode download.",
+        description: "Preview or add a TV series to Sonarr. Defaults to preview_only: true, monitor: none and no automatic search. Choose the exact TVDB ID from sonarr_search_series before applying with preview_only: false and native human approval. Monitoring enables future automatic downloads; an immediate search requires search_for_missing_episodes: true and monitor other than none. Adding alone does not select or grab a release.",
         inputSchema: {
           type: "object",
           properties: {
-            tvdb_id: { type: "number", description: "TVDB ID of the series" },
-            title: { type: "string", description: "Series title (auto-lookup if tvdb_id not provided)" },
-            quality_profile: { type: "string", description: "Quality profile name (default: first available)" },
+            tvdb_id: { type: "integer", minimum: 1, description: "Exact TVDB ID; required to apply" },
+            title: { type: "string", minLength: 1, description: "Preview title lookup only; returns candidates without adding" },
+            quality_profile: { type: "string", description: "Quality profile name (default: Any or first available)" },
+            preview_only: { type: "boolean", default: true, description: "Preview without changes; set false after reviewing and obtaining approval" },
+            search_for_missing_episodes: { type: "boolean", default: false, description: "Start an automatic search only when explicitly requested; incompatible with monitor none" },
             monitor: {
               type: "string",
               enum: ["all", "future", "missing", "existing", "none"],
-              description: "Which episodes to monitor (default: all)",
+              default: "none",
+              description: "Which episodes to monitor (default: none). Monitoring permits future automatic downloads.",
             },
           },
+          additionalProperties: false,
         },
+        annotations: { readOnlyHint: false },
       },
       {
         name: "sonarr_list_series",

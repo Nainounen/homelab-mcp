@@ -152,15 +152,20 @@ export function radarrModule(client: ArrClient): ToolModule {
       },
       {
         name: "radarr_add_movie",
-        description: "Add a movie to Radarr and trigger an automatic download search.",
+        description: "Preview or add a movie to Radarr. Defaults to preview_only: true, monitored: false and no automatic search. Choose the exact TMDB ID from radarr_search_movie before applying with preview_only: false and native human approval. Once added, radarr_interactive_search and radarr_grab_release can pick a specific release (for example a particular cut). Monitoring enables future automatic downloads; an immediate search requires search_for_movie: true and monitored: true. Adding alone does not select or grab a release.",
         inputSchema: {
           type: "object",
           properties: {
-            tmdb_id: { type: "number", description: "TMDB ID of the movie" },
-            title: { type: "string", description: "Movie title (auto-lookup if tmdb_id not provided)" },
-            quality_profile: { type: "string", description: "Quality profile name (default: first available)" },
+            tmdb_id: { type: "integer", minimum: 1, description: "Exact TMDB ID; required to apply" },
+            title: { type: "string", minLength: 1, description: "Preview title lookup only; returns candidates without adding" },
+            quality_profile: { type: "string", description: "Quality profile name (default: Any or first available)" },
+            preview_only: { type: "boolean", default: true, description: "Preview without changes; set false after reviewing and obtaining approval" },
+            monitored: { type: "boolean", default: false, description: "Monitor the movie (default false). Monitoring permits future automatic downloads and upgrades." },
+            search_for_movie: { type: "boolean", default: false, description: "Start an automatic search only when explicitly requested; requires monitored: true" },
           },
+          additionalProperties: false,
         },
+        annotations: { readOnlyHint: false },
       },
       {
         name: "radarr_list_movies",

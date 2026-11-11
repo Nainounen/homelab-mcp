@@ -10,7 +10,9 @@ import { createSonarrClient, createRadarrClient } from "./arr.js";
 import { createSabnzbdClient } from "./sabnzbd.js";
 import { createOverseerrClient } from "./overseerr.js";
 import { sonarrModule } from "./modules/sonarr.js";
+import { SonarrAddSeriesSchema } from "./tools/sonarr.js";
 import { radarrModule } from "./modules/radarr.js";
+import { RadarrAddMovieSchema } from "./tools/radarr.js";
 import { sabnzbdModule } from "./modules/sabnzbd.js";
 import { seerrModule } from "./modules/seerr.js";
 import { PlexFixMatchSchema } from "./tools/plex-match.js";
@@ -60,6 +62,7 @@ const batchActionSchemas: Record<string, z.ZodTypeAny> = {
   sabnzbd_clear_queue: sabClearQueueSchema,
 };
 const actionTools = new Set([
+  "sonarr_add_series", "radarr_add_movie",
   ...Object.keys(batchActionSchemas),
   "radarr_bulk_import_replacements",
   "radarr_bulk_set_quality_profile",
@@ -91,6 +94,8 @@ dispatch.set("media_get_monitor_status",async args => {
   return JSON.stringify(JSON.parse(await fs.readFile(file,"utf8")));
 });
 const newActionSchemas: Record<string, z.ZodTypeAny> = {
+  sonarr_add_series: SonarrAddSeriesSchema,
+  radarr_add_movie: RadarrAddMovieSchema,
   ...batchActionSchemas,
   plex_fix_match: PlexFixMatchSchema,
   ...bazarrActionSchemas,
@@ -159,7 +164,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       // Approval belongs to the authenticated MCP client, never to a model argument.
       const approval = await server.elicitInput({
         mode: "form",
-        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: matchPreview ?? batchPreview ?? (request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
+        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: matchPreview ?? batchPreview ?? (["sonarr_add_series", "radarr_add_movie"].includes(request.params.name) || request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
         requestedSchema: { type: "object", properties: {} },
       }, { timeout: 300_000 });
       if (approval.action !== "accept") return { content: [{ type: "text", text: "Action denied or approval expired. No changes made." }], isError: true };

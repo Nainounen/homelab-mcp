@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ArrClient, ArrCommand, ArrMediaFile, ArrLanguage, describeArrFile, filterArrLanguages, getArrRecords, listArrLanguages, listArrQualityProfiles, submitArrCommand } from "../arr.js";
-import { bytes, getFirstQualityProfileId, QualityProfile } from "../utils.js";
+import { bytes, QualityProfile } from "../utils.js";
 
 interface SonarrSeries {
   id: number;
@@ -20,6 +20,9 @@ interface SonarrSeries {
   genres?: string[];
   network?: string;
   qualityProfileId?: number;
+  seasons?: Array<{ seasonNumber: number; monitored: boolean }>;
+  seriesType?: string;
+  titleSlug?: string;
 }
 
 interface SonarrQueueItem {
@@ -47,10 +50,16 @@ export const SonarrSearchSchema = z.object({
 });
 
 export const SonarrAddSeriesSchema = z.object({
-  tvdb_id: z.number().optional().describe("TVDB ID (from sonarr_search_series)"),
-  title: z.string().optional().describe("Series title — used to auto-lookup if tvdb_id not provided"),
-  quality_profile: z.string().optional().describe("Quality profile name (default: first available)"),
-  monitor: z.enum(["all", "future", "missing", "existing", "none"]).optional().default("all").describe("Which episodes to monitor (default: all)"),
+  tvdb_id: z.number().int().positive().optional().describe("Exact TVDB ID; required when applying"),
+  title: z.string().trim().min(1).optional().describe("Title lookup for preview only; choose an exact TVDB ID before applying"),
+  quality_profile: z.string().trim().min(1).optional().describe("Quality profile name (default: Any or first available)"),
+  monitor: z.enum(["all", "future", "missing", "existing", "none"]).default("none"),
+  search_for_missing_episodes: z.boolean().default(false),
+  preview_only: z.boolean().default(true),
+}).strict().superRefine((input, ctx) => {
+  if (!input.tvdb_id && !input.title) ctx.addIssue({ code: "custom", message: "Provide tvdb_id or title" });
+  if (!input.preview_only && !input.tvdb_id) ctx.addIssue({ code: "custom", message: "Choose an exact tvdb_id before applying" });
+  if (input.monitor === "none" && input.search_for_missing_episodes) ctx.addIssue({ code: "custom", message: "An unmonitored addition cannot start an automatic search" });
 });
 
 export const SonarrRemoveSeriesSchema = z.object({
@@ -100,54 +109,66 @@ export async function sonarrAddSeries(
   client: ArrClient,
   input: z.infer<typeof SonarrAddSeriesSchema>
 ): Promise<string> {
-  let tvdbId = input.tvdb_id;
-
+  const tvdbId = input.tvdb_id;
   if (!tvdbId) {
-    if (!input.title) throw new Error("Provide either tvdb_id or title");
     const results = await client.get<SonarrSeries[]>("/series/lookup", { term: input.title });
-    if (!results.length) return `No results found for "${input.title}"`;
-    tvdbId = results[0].tvdbId;
+    return JSON.stringify({ preview: true, submitted: false, message: "Choose an exact tvdb_id, then preview again before applying.", candidates: results.slice(0, 8).map(s => ({ tvdb_id: s.tvdbId, title: s.title, year: s.year })) });
   }
 
   const already = await getSeriesByTvdbId(client, tvdbId);
   if (already) {
-    const pct = already.statistics?.percentOfEpisodes?.toFixed(0) ?? "?";
-    return `"${already.title}" is already in your Sonarr library (${pct}% episodes downloaded).`;
+    return JSON.stringify({ preview: input.preview_only, submitted: false, already_exists: true, tvdb_id: tvdbId, title: already.title, series_id: already.id, monitored: already.monitored, message: "Already in the library; existing settings were left unchanged." });
   }
 
   const profiles = await client.get<QualityProfile[]>("/qualityprofile");
-  let profileId: number;
-  if (input.quality_profile) {
-    const match = profiles.find(
-      (p) => p.name.toLowerCase() === input.quality_profile!.toLowerCase()
-    );
-    if (!match) throw new Error(`Quality profile "${input.quality_profile}" not found. Available: ${profiles.map((p) => p.name).join(", ")}`);
-    profileId = match.id;
-  } else {
-    profileId = await getFirstQualityProfileId(client, "Sonarr");
-  }
+  const profile = input.quality_profile
+    ? profiles.find(p => p.name.toLowerCase() === input.quality_profile!.toLowerCase())
+    : profiles.find(p => p.name.toLowerCase() === "any") ?? profiles[0];
+  if (!profile) throw new Error("No matching Sonarr quality profile. Use sonarr_list_quality_profiles.");
 
-  const rootFolder = process.env.SONARR_ROOT_FOLDER;
-  if (!rootFolder) throw new Error("SONARR_ROOT_FOLDER is not set in .env");
+  const roots = await client.get<Array<{ path: string }>>("/rootfolder");
+  const rootFolder = process.env.SONARR_ROOT_FOLDER ?? (roots.length === 1 ? roots[0].path : undefined);
+  if (!rootFolder) throw new Error("Set SONARR_ROOT_FOLDER to choose between Sonarr root folders before adding a series");
+  if (!roots.some(root => root.path === rootFolder)) throw new Error("Configured SONARR_ROOT_FOLDER is not a Sonarr root folder");
 
   const lookup = await client.get<SonarrSeries[]>("/series/lookup", { term: `tvdb:${tvdbId}` });
-  if (!lookup.length) throw new Error(`Series with tvdbId ${tvdbId} not found`);
-  const series = lookup[0];
+  const series = lookup.find(s => s.tvdbId === tvdbId);
+  if (!series) throw new Error(`Series with tvdbId ${tvdbId} not found`);
+  const monitored = input.monitor !== "none";
+  const preview = {
+    preview: true, submitted: false, tvdb_id: tvdbId, title: series.title, year: series.year,
+    quality_profile: profile.name, quality_profile_id: profile.id, root_folder: rootFolder,
+    monitor: input.monitor, monitored, search_for_missing_episodes: input.search_for_missing_episodes,
+    future_automatic_downloads_possible: monitored,
+  };
+  if (input.preview_only) return JSON.stringify(preview);
 
-  await client.post<SonarrSeries>("/series", {
-    title: series.title,
-    tvdbId: series.tvdbId,
-    qualityProfileId: profileId,
-    rootFolderPath: rootFolder,
-    monitored: true,
-    seasonFolder: true,
-    addOptions: {
-      searchForMissingEpisodes: true,
-      monitor: input.monitor,
-    },
-  });
-
-  return `Added "${series.title}" (${series.year}) to Sonarr — searching for episodes now.`;
+  try {
+    await client.postOnce<SonarrSeries>("/series", {
+      title: series.title,
+      tvdbId: series.tvdbId,
+      qualityProfileId: profile.id,
+      rootFolderPath: rootFolder,
+      monitored,
+      monitorNewItems: monitored ? "all" : "none",
+      seasons: series.seasons?.map(season => ({ seasonNumber: season.seasonNumber, monitored: monitored && season.seasonNumber > 0 })),
+      seriesType: series.seriesType ?? "standard",
+      titleSlug: series.titleSlug,
+      seasonFolder: true,
+      addOptions: {
+        searchForMissingEpisodes: input.search_for_missing_episodes,
+        searchForCutoffUnmetEpisodes: false,
+        monitor: input.monitor,
+      },
+    });
+  } catch {
+    throw new Error("Sonarr add response was unsuccessful or uncertain. Inspect sonarr_list_series before retrying; the series may have been added.");
+  }
+  const saved = await getSeriesByTvdbId(client, tvdbId);
+  if (!saved || saved.monitored !== monitored || saved.qualityProfileId !== profile.id) {
+    throw new Error("Sonarr accepted the add, but library verification did not match. Inspect sonarr_list_series before any retry.");
+  }
+  return JSON.stringify({ ...preview, preview: false, submitted: true, verified: true, series_id: saved.id });
 }
 
 export async function sonarrListSeries(
@@ -638,7 +659,7 @@ export async function sonarrGrabRelease(
   if (release.rejections?.length && !input.allow_rejected) throw new Error(`Release rejected: ${warnings}. Review these reasons and obtain human approval before setting allow_rejected: true.`);
   await client.post("/release", release);
   const q = release.quality?.quality?.name ?? "?";
-  return `Grabbing "${release.title}" [${q}] — check sonarr_get_queue to monitor progress.`;
+  return `Grab submitted for "${release.title}" [${q}]. Not confirmed yet: check sonarr_get_queue or sonarr_get_history before reporting it as downloading.`;
 }
 
 // ─── Manual import ────────────────────────────────────────────────────────────
