@@ -1,8 +1,8 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { isAxiosError } from "axios";
-import { OverseerrClient } from "../overseerr.js";
-import { MEDIA_STATUS, REQUEST_STATUS } from "./overseerr.js";
+import { SeerrClient } from "../seerr.js";
+import { MEDIA_STATUS, REQUEST_STATUS } from "./seerr.js";
 
 interface SeasonStatus { seasonNumber: number; status: number }
 interface ExistingRequest { id: number; status: number; is4k?: boolean; seasons?: SeasonStatus[] }
@@ -56,7 +56,7 @@ const isTracked = (status?: number): boolean => status !== undefined && status !
 // Declined and completed requests do not block a new one. 4K requests are a separate track.
 const isOpen = (request: ExistingRequest): boolean => !request.is4k && request.status !== REQUEST_DECLINED && request.status !== REQUEST_COMPLETED;
 
-export async function seerrSearch(client: OverseerrClient, input: z.infer<typeof SeerrSearchSchema>): Promise<string> {
+export async function seerrSearch(client: SeerrClient, input: z.infer<typeof SeerrSearchSchema>): Promise<string> {
   const page = await client.get<{ page: number; totalPages: number; totalResults: number; results: SearchResult[] }>(
     `/search?query=${encodeQuery(input.query)}&page=${input.page}`);
   const results = page.results.filter(row => row.mediaType === "movie" || row.mediaType === "tv").map(row => {
@@ -75,7 +75,7 @@ export async function seerrSearch(client: OverseerrClient, input: z.infer<typeof
   return JSON.stringify({ page: page.page, total_pages: page.totalPages, results });
 }
 
-async function loadDetails(client: OverseerrClient, mediaType: string, tmdbId: number): Promise<Details> {
+async function loadDetails(client: SeerrClient, mediaType: string, tmdbId: number): Promise<Details> {
   try {
     return await client.get<Details>(`/${mediaType}/${tmdbId}`);
   } catch (error) {
@@ -87,14 +87,14 @@ async function loadDetails(client: OverseerrClient, mediaType: string, tmdbId: n
   }
 }
 
-async function expectedProfile(client: OverseerrClient, service: "radarr" | "sonarr", anime: boolean): Promise<string | undefined> {
+async function expectedProfile(client: SeerrClient, service: "radarr" | "sonarr", anime: boolean): Promise<string | undefined> {
   try {
     const server = (await client.get<ArrServer[]>(`/settings/${service}`)).find(row => row.isDefault && !row.is4k);
     return (anime && server?.activeAnimeProfileName) || server?.activeProfileName;
   } catch { return undefined; }
 }
 
-async function approvalNote(client: OverseerrClient, tv: boolean): Promise<string> {
+async function approvalNote(client: SeerrClient, tv: boolean): Promise<string> {
   // Sonarr searches the whole series, not only the seasons in the request.
   const outcome = tv
     ? "Seerr monitors these seasons in Sonarr and starts a series search. Other monitored seasons with missing episodes can download too."
@@ -106,7 +106,7 @@ async function approvalNote(client: OverseerrClient, tv: boolean): Promise<strin
   return `Approval depends on the Seerr permissions of the API key owner. Once approved: ${outcome}`;
 }
 
-export async function seerrCreateRequest(client: OverseerrClient, input: z.infer<typeof SeerrCreateRequestSchema>): Promise<string> {
+export async function seerrCreateRequest(client: SeerrClient, input: z.infer<typeof SeerrCreateRequestSchema>): Promise<string> {
   const path = `/${input.media_type}/${input.tmdb_id}`;
   const details = await loadDetails(client, input.media_type, input.tmdb_id);
   const media = details.mediaInfo;

@@ -3,14 +3,14 @@
 Media services health checker for homelab-mcp media_dashboard.
 
 Reads the media stack's .env for API keys and queries SABnzbd, Prowlarr,
-and Overseerr via their local HTTP APIs. Prints a JSON result to stdout.
+and Seerr via their local HTTP APIs. Prints a JSON result to stdout.
 
 Configurable via environment variables on the devbox:
   MEDIA_ENV_PATH      — path to the media stack .env file (default: /opt/media/.env)
   SABNZBD_CONFIG_PATH — path to sabnzbd.ini for API key extraction
   SABNZBD_PORT        — SABnzbd port (default: 8085)
   PROWLARR_PORT       — Prowlarr port (default: 9696)
-  OVERSEERR_PORT      — Overseerr port (default: 5055)
+  SEERR_PORT          — Seerr port (default: 5055; OVERSEERR_PORT still works)
 """
 
 import json
@@ -84,17 +84,18 @@ def main() -> None:
     except Exception as exc:
         result["prowlarr_error"] = str(exc)
 
-    # ── Overseerr ────────────────────────────────────────────────────────
-    overseerr_port = os.environ.get("OVERSEERR_PORT", "5055")
+    # ── Seerr ────────────────────────────────────────────────────────────
+    # The OVERSEERR_* names from before the rename to Seerr keep working.
+    seerr_port = os.environ.get("SEERR_PORT") or os.environ.get("OVERSEERR_PORT", "5055")
     try:
-        overseerr_key = env.get("OVERSEERR_API_KEY")
-        if overseerr_key:
+        seerr_key = env.get("SEERR_API_KEY") or env.get("OVERSEERR_API_KEY")
+        if seerr_key:
             status = fetch(
-                f"http://127.0.0.1:{overseerr_port}/api/v1/status", overseerr_key
+                f"http://127.0.0.1:{seerr_port}/api/v1/status", seerr_key
             )
             counts = fetch(
-                f"http://127.0.0.1:{overseerr_port}/api/v1/request/count",
-                overseerr_key,
+                f"http://127.0.0.1:{seerr_port}/api/v1/request/count",
+                seerr_key,
             )
             result["seerr"] = {
                 "version": status.get("version"),

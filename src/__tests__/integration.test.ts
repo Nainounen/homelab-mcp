@@ -56,9 +56,9 @@ vi.mock("../sabnzbd.js", () => ({
   })),
 }));
 
-vi.mock("../overseerr.js", () => ({
-  OverseerrClient: vi.fn(),
-  createOverseerrClient: vi.fn(() => ({
+vi.mock("../seerr.js", () => ({
+  SeerrClient: vi.fn(),
+  createSeerrClient: vi.fn(() => ({
     get: vi.fn().mockResolvedValue([]), post: vi.fn().mockResolvedValue({}), delete: vi.fn(),
   })),
 }));
@@ -93,7 +93,7 @@ import { getDevbox, getProxmoxSSH } from "../ssh.js";
 import { createRadarrClient, createSonarrClient } from "../arr.js";
 import { createProwlarrClient } from "../prowlarr.js";
 import { createSabnzbdClient } from "../sabnzbd.js";
-import { createOverseerrClient } from "../overseerr.js";
+import { createSeerrClient } from "../seerr.js";
 import { getQnap } from "../qnap.js";
 import { createPrometheusClient } from "../prometheus.js";
 import { createGrafanaClient } from "../grafana.js";
@@ -109,7 +109,7 @@ function buildClients(): HomelabClients {
     sonarr: createSonarrClient(),
     prowlarr: createProwlarrClient(),
     sabnzbd: createSabnzbdClient(),
-    overseerr: createOverseerrClient(),
+    seerr: createSeerrClient(),
     prometheus: createPrometheusClient(),
     grafana: createGrafanaClient(),
     getQnap,

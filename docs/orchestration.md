@@ -145,7 +145,7 @@ plex_refresh_library with library_name:"Movies" — scan for new files
 plex_delete_media with rating_key — permanently delete (use with caution)
 ```
 
-### Handling Family Requests (Overseerr/Seerr)
+### Handling Family Requests (Seerr)
 
 ```
 1. seerr_list_requests with filter:"pending" — see what's been requested

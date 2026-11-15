@@ -3,7 +3,7 @@ import http from "http";
 
 const keepAliveAgent = new http.Agent({ keepAlive: true });
 
-export class OverseerrClient {
+export class SeerrClient {
   private http: AxiosInstance;
 
   constructor(baseUrl: string, apiKey: string) {
@@ -32,9 +32,10 @@ export class OverseerrClient {
   }
 }
 
-export function createOverseerrClient(): OverseerrClient {
-  const url = process.env.OVERSEERR_URL;
-  const key = process.env.OVERSEERR_API_KEY;
-  if (!url || !key) throw new Error("Missing OVERSEERR_URL or OVERSEERR_API_KEY");
-  return new OverseerrClient(url, key);
+export function createSeerrClient(): SeerrClient {
+  // The OVERSEERR_* names from before the rename to Seerr keep working.
+  const url = process.env.SEERR_URL || process.env.OVERSEERR_URL;
+  const key = process.env.SEERR_API_KEY || process.env.OVERSEERR_API_KEY;
+  if (!url || !key) throw new Error("Missing SEERR_URL or SEERR_API_KEY");
+  return new SeerrClient(url, key);
 }

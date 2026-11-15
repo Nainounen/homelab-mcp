@@ -13,7 +13,7 @@ import { ProxmoxClient } from "../proxmox.js";
 import { ProxmoxSSH, DevboxSSH } from "../ssh.js";
 import { ArrClient } from "../arr.js";
 import { SabnzbdClient } from "../sabnzbd.js";
-import { OverseerrClient } from "../overseerr.js";
+import { SeerrClient } from "../seerr.js";
 import { QnapSSH } from "../qnap.js";
 import { PrometheusClient } from "../prometheus.js";
 import { GrafanaClient } from "../grafana.js";
@@ -59,7 +59,7 @@ export interface RequiredClients {
   sonarr:     ArrClient;
   prowlarr:   ProwlarrClient;
   sabnzbd:    SabnzbdClient;
-  overseerr:  OverseerrClient;
+  seerr:      SeerrClient;
   getQnap:    () => QnapSSH;
 }
 
@@ -92,7 +92,7 @@ export function buildModules(c: HomelabClients): ToolModule[] {
     mediaModule(c.devbox, c.pveSSH, c.proxmox, c.radarr, c.sonarr, c.sabnzbd),
     prowlarrModule(c.prowlarr),
     sabnzbdModule(c.sabnzbd),
-    seerrModule(c.overseerr),
+    seerrModule(c.seerr),
     qnapModule(c.getQnap),
     notifyModule(),
   ];

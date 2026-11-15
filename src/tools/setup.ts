@@ -20,6 +20,8 @@ interface EnvVarMeta {
   required: boolean;
   /** Short hint shown to the user during setup */
   hint?: string;
+  /** Earlier name of this variable; a value set under it still counts as configured */
+  legacyKey?: string;
 }
 
 /**
@@ -73,9 +75,9 @@ const ENV_META: EnvVarMeta[] = [
   { key: "SABNZBD_URL", section: "SABnzbd", description: "SABnzbd URL", defaultValue: "", required: true, hint: "e.g. http://192.168.1.14:8085" },
   { key: "SABNZBD_API_KEY", section: "SABnzbd", description: "SABnzbd API key", defaultValue: "", required: true },
 
-  // ── Media: Overseerr (required) ────────────────────────────────────────────
-  { key: "OVERSEERR_URL", section: "Overseerr", description: "Overseerr URL", defaultValue: "", required: true, hint: "e.g. http://192.168.1.14:5055" },
-  { key: "OVERSEERR_API_KEY", section: "Overseerr", description: "Overseerr API key", defaultValue: "", required: true },
+  // ── Media: Seerr (required) ────────────────────────────────────────────────
+  { key: "SEERR_URL", section: "Seerr", description: "Seerr URL", defaultValue: "", required: true, hint: "e.g. http://192.168.1.14:5055", legacyKey: "OVERSEERR_URL" },
+  { key: "SEERR_API_KEY", section: "Seerr", description: "Seerr API key", defaultValue: "", required: true, legacyKey: "OVERSEERR_API_KEY" },
 
   // ── Media: Plex (optional) ─────────────────────────────────────────────────
   { key: "PLEX_URL", section: "Plex", description: "Plex URL", defaultValue: "", required: false, hint: "e.g. http://192.168.1.14:32400" },
@@ -269,7 +271,7 @@ function buildStatus(): { sections: SetupStatus[]; allDone: boolean; totalRequir
       sections.set(meta.section, { section: meta.section, vars: [] });
     }
 
-    const currentValue = current.get(meta.key) ?? "";
+    const currentValue = current.get(meta.key) || (meta.legacyKey ? current.get(meta.legacyKey) : undefined) || "";
     const configured = currentValue !== "" && currentValue !== meta.defaultValue;
 
     if (meta.required) {
@@ -394,7 +396,7 @@ export async function homelabSetup(
       }
 
       // Validate keys against known vars
-      const knownKeys = new Set(ENV_META.map(m => m.key));
+      const knownKeys = new Set(ENV_META.flatMap(m => (m.legacyKey ? [m.key, m.legacyKey] : [m.key])));
       const unknown = input.updates.filter(u => !knownKeys.has(u.key));
       if (unknown.length > 0) {
         return `Unknown env vars: ${unknown.map(u => u.key).join(", ")}. Check the key names against .env.example.`;

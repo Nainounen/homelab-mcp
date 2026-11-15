@@ -2,7 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "crypto";
 import { z } from "zod";
 import { ArrClient } from "../arr.js";
-import { createOverseerrClient, OverseerrClient } from "../overseerr.js";
+import { createSeerrClient, SeerrClient } from "../seerr.js";
 
 interface QualityItem { id?: number; name?: string; allowed: boolean; quality?: { id: number; name: string }; items?: QualityItem[] }
 interface Profile { id?: number; name: string; upgradeAllowed: boolean; cutoff: number; items: QualityItem[]; formatItems?: Array<{format:number;name?:string;score:number}>; minFormatScore?:number; cutoffFormatScore?:number; minUpgradeFormatScore?:number; language?:number }
@@ -62,7 +62,7 @@ export async function deleteProfile(
  client: ArrClient,
  app: "sonarr" | "radarr",
  input: z.infer<typeof deleteProfileSchema>,
- seerr: OverseerrClient = createOverseerrClient(),
+ seerr: SeerrClient = createSeerrClient(),
 ): Promise<string> {
  const profile = await client.get<Profile>("/qualityprofile/" + input.profile_id);
  if (profile.name !== input.expected_name) throw new Error("Profile name does not match the requested removal. Inspect profiles again.");

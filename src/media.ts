@@ -8,7 +8,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { createSonarrClient, createRadarrClient } from "./arr.js";
 import { createSabnzbdClient } from "./sabnzbd.js";
-import { createOverseerrClient } from "./overseerr.js";
+import { createSeerrClient } from "./seerr.js";
 import { sonarrModule } from "./modules/sonarr.js";
 import { SonarrAddSeriesSchema } from "./tools/sonarr.js";
 import { radarrModule } from "./modules/radarr.js";
@@ -35,7 +35,7 @@ dotenv.config({ path: process.env.HOMELAB_ENV_FILE ?? path.resolve(__dirname, ".
 
 // No infrastructure clients are initialized. Deploy with a media-only environment file.
 const modules = [sonarrModule(createSonarrClient()), radarrModule(createRadarrClient()),
-  sabnzbdModule(createSabnzbdClient()), seerrModule(createOverseerrClient()), plexModule()];
+  sabnzbdModule(createSabnzbdClient()), seerrModule(createSeerrClient()), plexModule()];
 if (process.env.BAZARR_URL && process.env.BAZARR_API_KEY) modules.push(bazarrModule(createBazarrClient()));
 const readOnlyTools = new Set([
   "radarr_inspect_replacement",

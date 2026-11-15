@@ -1,10 +1,10 @@
 import { ToolModule } from "../types.js";
-import { OverseerrClient } from "../overseerr.js";
+import { SeerrClient } from "../seerr.js";
 import { seerrProfileTools, seerrProfileSettings, seerrSetProfile, seerrProfileSchema } from "../tools/seerr-profiles.js";
 import { seerrRequestTools, seerrSearch, seerrCreateRequest, SeerrSearchSchema, SeerrCreateRequestSchema } from "../tools/seerr-requests.js";
-import * as impl from "../tools/overseerr.js";
+import * as impl from "../tools/seerr.js";
 
-export function seerrModule(client: OverseerrClient): ToolModule {
+export function seerrModule(client: SeerrClient): ToolModule {
   return {
     domain: "Seerr",
     tools: [
@@ -71,13 +71,13 @@ export function seerrModule(client: OverseerrClient): ToolModule {
         case "seerr_set_quality_profile": return seerrSetProfile(client,seerrProfileSchema.parse(args));
         case "seerr_search": return seerrSearch(client, SeerrSearchSchema.parse(args));
         case "seerr_create_request": return seerrCreateRequest(client, SeerrCreateRequestSchema.parse(args));
-        case "seerr_get_request": return impl.overseerrGetRequest(client, impl.OverseerrRequestSchema.parse(args));
-        case "seerr_retry_request": return impl.overseerrRetryRequest(client, impl.OverseerrRequestActionSchema.parse(args));
-        case "seerr_list_requests":  return impl.overseerrListRequests(client, impl.OverseerrListSchema.parse(args));
-        case "seerr_approve_request": return impl.overseerrApproveRequest(client, impl.OverseerrRequestActionSchema.parse(args));
-        case "seerr_decline_request": return impl.overseerrDeclineRequest(client, impl.OverseerrRequestActionSchema.parse(args));
-        case "seerr_delete_request": return impl.overseerrDeleteRequest(client, impl.OverseerrRequestActionSchema.parse(args));
-        case "seerr_stats":          return impl.overseerrGetStats(client);
+        case "seerr_get_request": return impl.seerrGetRequest(client, impl.SeerrRequestSchema.parse(args));
+        case "seerr_retry_request": return impl.seerrRetryRequest(client, impl.SeerrRequestActionSchema.parse(args));
+        case "seerr_list_requests":  return impl.seerrListRequests(client, impl.SeerrListSchema.parse(args));
+        case "seerr_approve_request": return impl.seerrApproveRequest(client, impl.SeerrRequestActionSchema.parse(args));
+        case "seerr_decline_request": return impl.seerrDeclineRequest(client, impl.SeerrRequestActionSchema.parse(args));
+        case "seerr_delete_request": return impl.seerrDeleteRequest(client, impl.SeerrRequestActionSchema.parse(args));
+        case "seerr_stats":          return impl.seerrGetStats(client);
         default: return null;
       }
     },

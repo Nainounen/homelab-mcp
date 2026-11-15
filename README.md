@@ -27,7 +27,7 @@ The setup wizard scans your configuration, guides you through each setting inter
 - **Node.js 20+**
 - A Proxmox VE host reachable over the network
 - A devbox (any SSH-accessible Linux host running Docker)
-- (Optional) Media services: Plex, Radarr, Sonarr, SABnzbd, Overseerr, Prowlarr
+- (Optional) Media services: Plex, Radarr, Sonarr, SABnzbd, Seerr, Prowlarr
 - (Optional) Monitoring: Prometheus, Grafana, Uptime Kuma
 
 ### Install
@@ -95,7 +95,7 @@ All settings live in `.env`. See `.env.example` for the full template. The serve
 | `SONARR_URL`, `SONARR_API_KEY` | Sonarr API |
 | `PROWLARR_URL`, `PROWLARR_API_KEY` | Prowlarr API |
 | `SABNZBD_URL`, `SABNZBD_API_KEY` | SABnzbd API |
-| `OVERSEERR_URL`, `OVERSEERR_API_KEY` | Overseerr API |
+| `SEERR_URL`, `SEERR_API_KEY` | Seerr API (the older `OVERSEERR_URL` and `OVERSEERR_API_KEY` still work) |
 
 ### Optional (skipped with a warning if missing)
 

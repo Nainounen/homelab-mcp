@@ -13,7 +13,7 @@ import { getDevbox, getProxmoxSSH } from "./ssh.js";
 import { createRadarrClient, createSonarrClient, createArrV1Client } from "./arr.js";
 import { createProwlarrClient } from "./prowlarr.js";
 import { createSabnzbdClient } from "./sabnzbd.js";
-import { createOverseerrClient } from "./overseerr.js";
+import { createSeerrClient } from "./seerr.js";
 import { getQnap } from "./qnap.js";
 import { createPrometheusClient } from "./prometheus.js";
 import { createGrafanaClient } from "./grafana.js";
@@ -55,7 +55,7 @@ const clients: HomelabClients = {
   sonarr:     createSonarrClient(),
   prowlarr:   createProwlarrClient(),
   sabnzbd:    createSabnzbdClient(),
-  overseerr:  createOverseerrClient(),
+  seerr:      createSeerrClient(),
   prometheus: tryCreate("Prometheus", createPrometheusClient),
   grafana:    tryCreate("Grafana",    createGrafanaClient),
   getQnap,

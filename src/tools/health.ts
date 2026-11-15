@@ -79,7 +79,7 @@ export async function homelabHealth(): Promise<string> {
   add("Sonarr", "SONARR_URL");
   add("Prowlarr", "PROWLARR_URL");
   add("SABnzbd", "SABNZBD_URL");
-  add("Overseerr", "OVERSEERR_URL");
+  add("Seerr", process.env.SEERR_URL ? "SEERR_URL" : "OVERSEERR_URL");
   add("Plex", "PLEX_URL");
   add("Tautulli", "TAUTULLI_URL");
   add("Bazarr", "BAZARR_URL");

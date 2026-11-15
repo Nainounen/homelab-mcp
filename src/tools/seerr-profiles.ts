@@ -1,13 +1,13 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { isAxiosError } from "axios";
-import { OverseerrClient } from "../overseerr.js";
+import { SeerrClient } from "../seerr.js";
 
 interface Settings { id:number; name:string; activeProfileId:number; activeProfileName:string; activeAnimeProfileId?:number; activeAnimeProfileName?:string; is4k:boolean; isDefault:boolean; [key:string]:unknown }
 interface Profile {id:number;name:string}
 export const seerrProfileSchema=z.object({service:z.enum(["sonarr","radarr"]),server_id:z.number().int().min(0),profile_id:z.number().int().positive(),expected_current_profile_id:z.number().int().positive(),anime:z.boolean().default(false),preview_only:z.boolean().default(true)}).strict();
 
-export async function seerrProfileSettings(client:OverseerrClient):Promise<string> {
+export async function seerrProfileSettings(client:SeerrClient):Promise<string> {
  const result=[];
  for(const service of ["sonarr","radarr"]){
   const servers=await client.get<Settings[]>("/settings/"+service);
@@ -19,7 +19,7 @@ export async function seerrProfileSettings(client:OverseerrClient):Promise<strin
  }
  return JSON.stringify({servers:result,note:"Seerr selects profiles defined by the linked Arr instance. These defaults affect future requests, not existing file quality."});
 }
-export async function seerrSetProfile(client:OverseerrClient,input:z.infer<typeof seerrProfileSchema>):Promise<string> {
+export async function seerrSetProfile(client:SeerrClient,input:z.infer<typeof seerrProfileSchema>):Promise<string> {
  if(input.anime&&input.service!=="sonarr")throw new Error("Anime profile is available only for Sonarr.");
  const servers=await client.get<Settings[]>("/settings/"+input.service);
  const server=servers.find(row=>row.id===input.server_id);
