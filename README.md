@@ -267,6 +267,8 @@ Bulk queue and history tools accept 1 to 200 explicit items. SABnzbd selections 
 | `plex_refresh_library` | Trigger a library scan |
 | `plex_delete_media` | Permanently delete by ratingKey |
 | `plex_get_watch_history` | Recent watch history across users |
+| `seerr_search` | Search movies and series by title, with TMDB ID and current Seerr status |
+| `seerr_create_request` | Preview or create a request for a movie or series by TMDB ID |
 | `seerr_list_requests` | List media requests from family |
 | `seerr_get_request` | Inspect request status, availability, seasons, and linked Arr IDs |
 | `seerr_retry_request` | Preview or retry a failed request |

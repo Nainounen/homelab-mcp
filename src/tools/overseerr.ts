@@ -12,8 +12,8 @@ interface OverseerrRequest {
   requestedBy: { displayName?: string; username?: string };
   createdAt: string;
 }
-const REQUEST_STATUS: Record<number, string> = { 1: "pending", 2: "approved", 3: "declined", 4: "failed", 5: "completed" };
-const MEDIA_STATUS: Record<number, string> = { 1: "unknown", 2: "pending", 3: "processing", 4: "partially available", 5: "available", 6: "blocklisted", 7: "deleted" };
+export const REQUEST_STATUS: Record<number, string> = { 1: "pending", 2: "approved", 3: "declined", 4: "failed", 5: "completed" };
+export const MEDIA_STATUS: Record<number, string> = { 1: "unknown", 2: "pending", 3: "processing", 4: "partially available", 5: "available", 6: "blocklisted", 7: "deleted" };
 export const OverseerrListSchema = z.object({
   filter: z.enum(["all", "pending", "approved", "declined", "available", "processing", "failed", "completed", "unavailable"]).default("all"),
   take: z.number().int().min(1).max(100).default(20),

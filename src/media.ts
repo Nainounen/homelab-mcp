@@ -20,6 +20,7 @@ import { plexModule } from "./modules/plex.js";
 import { redactSecrets, sanitizeError, truncateOutput } from "./utils.js";
 import { createProfileSchema, editProfileSchema, deleteProfileSchema } from "./tools/quality-profiles.js";
 import { seerrProfileSchema } from "./tools/seerr-profiles.js";
+import { SeerrCreateRequestSchema } from "./tools/seerr-requests.js";
 import { replacementDownloadSchema, replacementImportSchema, bulkReplacementImportSchema } from "./tools/radarr-replacement.js";
 import { queueBatchSchema } from "./tools/queue-bulk.js";
 import { sabBatchSchema } from "./tools/sabnzbd-bulk.js";
@@ -51,7 +52,7 @@ const readOnlyTools = new Set([
   "sabnzbd_get_status", "sabnzbd_list_queue", "sabnzbd_get_history", "sabnzbd_get_job",
   "sabnzbd_get_warnings", "sabnzbd_list_categories", "sabnzbd_list_servers",
   "sabnzbd_get_switches", "sabnzbd_get_folders", "sabnzbd_get_general",
-  "seerr_stats", "seerr_list_requests", "seerr_get_request",
+  "seerr_stats", "seerr_list_requests", "seerr_get_request", "seerr_search",
   "plex_get_metadata", "plex_get_matches",
   "plex_get_libraries", "plex_search", "plex_get_sessions", "plex_recently_added", "plex_get_watch_history", "plex_list_shares",
 ]);
@@ -77,7 +78,7 @@ const actionTools = new Set([
   "radarr_grab_release", "radarr_manual_import", "radarr_force_search",
   "sabnzbd_pause_queue", "sabnzbd_resume_queue", "sabnzbd_pause_timed", "sabnzbd_set_speed_limit",
   "sabnzbd_set_item_priority", "sabnzbd_pause_item", "sabnzbd_resume_item", "sabnzbd_retry_item",
-  "seerr_approve_request", "seerr_decline_request", "seerr_retry_request",
+  "seerr_approve_request", "seerr_decline_request", "seerr_retry_request", "seerr_create_request",
 ]);
 for (const tool of bazarrTools) (tool.annotations?.readOnlyHint ? readOnlyTools : actionTools).add(tool.name);
 const dispatch = new Map<string, (args: Record<string, unknown>) => Promise<string | null>>();
@@ -96,6 +97,7 @@ dispatch.set("media_get_monitor_status",async args => {
 const newActionSchemas: Record<string, z.ZodTypeAny> = {
   sonarr_add_series: SonarrAddSeriesSchema,
   radarr_add_movie: RadarrAddMovieSchema,
+  seerr_create_request: SeerrCreateRequestSchema,
   ...batchActionSchemas,
   plex_fix_match: PlexFixMatchSchema,
   ...bazarrActionSchemas,
@@ -160,17 +162,22 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       if (matchPreview.match_digest !== args.expected_match_digest) throw new Error("Plex match changed. Preview again before approval. Nothing changed.");
       if (matchPreview.already_matched) return { content: [{ type: "text", text: redactSecrets(JSON.stringify({ ...matchPreview, submitted: false })) }] };
     }
+    const requestPreview = request.params.name === "seerr_create_request" && args.preview_only === false
+      ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : undefined;
+    // Nothing to request: report it without asking for an approval that would change nothing.
+    if (requestPreview && requestPreview.requestable !== true) return { content: [{ type: "text", text: redactSecrets(JSON.stringify({ ...requestPreview, preview: false })) }] };
     if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false)) {
       // Approval belongs to the authenticated MCP client, never to a model argument.
       const approval = await server.elicitInput({
         mode: "form",
-        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: matchPreview ?? batchPreview ?? (["sonarr_add_series", "radarr_add_movie"].includes(request.params.name) || request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
+        message: "HOMELAB_ACTION\n" + redactSecrets(JSON.stringify({ tool: request.params.name, args: matchPreview ?? batchPreview ?? requestPreview ?? (["sonarr_add_series", "radarr_add_movie"].includes(request.params.name) || request.params.name.startsWith("bazarr_") ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : args) })),
         requestedSchema: { type: "object", properties: {} },
       }, { timeout: 300_000 });
       if (approval.action !== "accept") return { content: [{ type: "text", text: "Action denied or approval expired. No changes made." }], isError: true };
     }
     if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false)) await checkOperationLock();
-    const result = await handler(args);
+    // Send exactly the seasons the approval showed, even if Seerr's state changed while it was pending.
+    const result = await handler(requestPreview?.seasons ? { ...args, seasons: requestPreview.seasons } : args);
     return { content: [{ type: "text", text: truncateOutput(redactSecrets(result ?? "No result.")) }] };
   } catch (error) {
     const message = error instanceof z.ZodError ? "Invalid tool arguments." : sanitizeError(error);
