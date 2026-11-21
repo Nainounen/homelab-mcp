@@ -93,11 +93,17 @@ const dangerousTools = new Set([
   "seerr_set_quality_profile",
   "plex_invite_user",
   "bazarr_update_settings", "bazarr_set_enabled_languages", "bazarr_set_language_profiles", "bazarr_post_system_backups",
+  // Blocklisting a subtitle deletes it first; job patches can empty the queue; profile and provider
+  // posts reassign language profiles in bulk or reset provider throttling.
+  "bazarr_post_movies_blacklist", "bazarr_post_episodes_blacklist", "bazarr_patch_system_jobs",
+  "bazarr_post_movies", "bazarr_post_series", "bazarr_post_providers",
 ]);
 function needsConfirmation(name: string, args: Record<string, unknown>): boolean {
   if (process.env.HOMELAB_CONFIRM !== "dangerous") return true;
   if (dangerousTools.has(name) || name.startsWith("bazarr_delete_")) return true;
-  return args.delete_files === true || args.remove_from_client === true || args.blocklist === true;
+  // Deleting or blocklisting, overriding a release rejection, or moving instead of copying always asks.
+  return args.delete_files === true || args.remove_from_client === true || args.blocklist === true
+    || args.allow_rejected === true || (args.import_mode !== undefined && args.import_mode !== "copy");
 }
 const dispatch = new Map<string, (args: Record<string, unknown>) => Promise<string | null>>();
 const tools = modules.flatMap(module => module.tools.filter(tool => readOnlyTools.has(tool.name) || (process.env.HOMELAB_READ_ONLY !== "1" && actionTools.has(tool.name))).map(tool => {

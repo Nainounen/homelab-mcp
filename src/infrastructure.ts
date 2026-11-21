@@ -61,8 +61,10 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     let result: unknown;
     if (name === "proxmox_set_guest_memory" || name === "proxmox_set_guest_cores") {
       const parsed = name === "proxmox_set_guest_memory" ? memorySchema.parse(args) : coresSchema.parse(args);
-      // HOMELAB_CONFIRM=dangerous: resizing never restarts a guest, so it runs without a prompt.
-      if (!parsed.preview_only && process.env.HOMELAB_CONFIRM !== "dangerous") {
+      // HOMELAB_CONFIRM=dangerous: adding RAM or cores runs without a prompt (it never restarts a
+      // guest); taking them away can starve a running guest, so it still asks.
+      const shrinks = "memory_mb" in parsed ? parsed.memory_mb < parsed.expected_memory_mb : parsed.cores < parsed.expected_cores;
+      if (!parsed.preview_only && (process.env.HOMELAB_CONFIRM !== "dangerous" || shrinks)) {
         const approval = await server.elicitInput({ mode: "form", message: "HOMELAB_ACTION\n" + JSON.stringify({ tool: name, args: parsed }), requestedSchema: { type: "object", properties: {} } }, { timeout: 300_000 });
         if (approval.action !== "accept") throw new Error("Action was not approved. No changes made.");
       }
