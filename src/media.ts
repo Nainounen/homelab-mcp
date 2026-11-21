@@ -81,6 +81,24 @@ const actionTools = new Set([
   "seerr_approve_request", "seerr_decline_request", "seerr_retry_request", "seerr_create_request",
 ]);
 for (const tool of bazarrTools) (tool.annotations?.readOnlyHint ? readOnlyTools : actionTools).add(tool.name);
+// HOMELAB_CONFIRM=dangerous asks only before actions that delete or blocklist, replace library
+// files, change profiles or shared defaults, or share the library. Every other action runs without
+// a prompt. Unset or any other value keeps the prompt for every action.
+const dangerousTools = new Set([
+  ...Object.keys(batchActionSchemas),
+  "radarr_bulk_import_replacements", "radarr_bulk_set_quality_profile",
+  "radarr_download_replacement", "radarr_import_replacement",
+  "sonarr_create_quality_profile", "sonarr_edit_quality_profile", "sonarr_delete_quality_profile",
+  "radarr_create_quality_profile", "radarr_edit_quality_profile", "radarr_delete_quality_profile",
+  "seerr_set_quality_profile",
+  "plex_invite_user",
+  "bazarr_update_settings", "bazarr_set_enabled_languages", "bazarr_set_language_profiles", "bazarr_post_system_backups",
+]);
+function needsConfirmation(name: string, args: Record<string, unknown>): boolean {
+  if (process.env.HOMELAB_CONFIRM !== "dangerous") return true;
+  if (dangerousTools.has(name) || name.startsWith("bazarr_delete_")) return true;
+  return args.delete_files === true || args.remove_from_client === true || args.blocklist === true;
+}
 const dispatch = new Map<string, (args: Record<string, unknown>) => Promise<string | null>>();
 const tools = modules.flatMap(module => module.tools.filter(tool => readOnlyTools.has(tool.name) || (process.env.HOMELAB_READ_ONLY !== "1" && actionTools.has(tool.name))).map(tool => {
   dispatch.set(tool.name, args => module.handle(tool.name, args));
@@ -166,7 +184,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       ? JSON.parse((await handler({ ...args, preview_only: true })) ?? "{}") : undefined;
     // Nothing to request: report it without asking for an approval that would change nothing.
     if (requestPreview && requestPreview.requestable !== true) return { content: [{ type: "text", text: redactSecrets(JSON.stringify({ ...requestPreview, preview: false })) }] };
-    if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false)) {
+    if (actionTools.has(request.params.name) && !(hasPreview && args.preview_only !== false) && needsConfirmation(request.params.name, args)) {
       // Approval belongs to the authenticated MCP client, never to a model argument.
       const approval = await server.elicitInput({
         mode: "form",
